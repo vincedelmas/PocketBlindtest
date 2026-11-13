@@ -60,6 +60,10 @@ public final class MainActivity extends Activity {
         restored = state;
         if (state != null) { rounds = state.getInt("rounds"); wins = state.getInt("wins"); }
         downloadId = getPreferences(0).getLong("download", -1);
+        if (!BuildConfig.VERSION_NAME.equals(getPreferences(0).getString("downloadFrom", BuildConfig.VERSION_NAME))) {
+            downloadId = -1;
+            getPreferences(0).edit().remove("download").remove("downloadFrom").apply();
+        }
         audio = getSystemService(AudioManager.class);
         setVolumeControlStream(AudioManager.STREAM_MUSIC);
         registerReceiver(noisy, new IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY), RECEIVER_EXPORTED);
@@ -282,7 +286,7 @@ public final class MainActivity extends Activity {
             DownloadManager.Request request=new DownloadManager.Request(Uri.parse(url)).setTitle("Pocket Blindtest update")
                 .setMimeType("application/vnd.android.package-archive").setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
             downloadId=getSystemService(DownloadManager.class).enqueue(request);
-            getPreferences(0).edit().putLong("download",downloadId).apply();
+            getPreferences(0).edit().putLong("download",downloadId).putString("downloadFrom",BuildConfig.VERSION_NAME).apply();
             toast("Downloading. Tap Check for updates again to install when complete.");
         } catch(Exception e) { toast("Could not start the download. Try again."); }
     }
