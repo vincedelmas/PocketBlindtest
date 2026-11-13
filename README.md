@@ -1,52 +1,39 @@
 # Pocket Blindtest
 
-A tiny native Android music guessing game for a Nothing Phone (3a) running Android 16 (API 36). Java, platform widgets and media APIs, no runtime dependencies, ads, accounts or analytics.
+A simple music guessing game for Android 16. Play with songs stored on your phone, fully offline. No ads, accounts or analytics.
 
-## Play
+## How to play
 
-1. Allow audio access. The app reads songs indexed in Android's local music library (at least five seconds long).
-2. Play the intro: **0.15 s → 0.5 s → 2 s → 5 s**.
-3. Search your library by title or artist, select a song and confirm your guess. A wrong answer or skip uses one attempt. Replays are free.
-4. Solve it or reveal the answer after four attempts. Start another round whenever you like.
+1. Allow access to your music library.
+2. Listen to the intro and search for your answer by title or artist.
+3. Guess the song in four attempts: **0.15 → 0.5 → 2 → 5 seconds**.
 
-Songs are shuffled without repetition until the deck is exhausted. Excerpts always start at the beginning; silence in the original remains silence. Unsupported or removed files show an error; skip or refresh the library. Audio stops when the app leaves the foreground, loses audio focus or headphones disconnect. Rotation preserves the current question and session score; scores are not permanently stored.
+A wrong guess or skip unlocks a longer clip. Replay as often as you like. Songs are shuffled without repeating until you've played through your library.
 
-The short durations are intentionally harder than Heardle's six-stage 1/2/4/7/11/16-second format. Playback cutoffs use Android's main-thread timer and MediaPlayer, so 150 ms is approximate, especially over Bluetooth. Device testing is required; this is not sample-accurate audio trimming.
+Clips start at the beginning of each song, including any silence. The shortest clip is approximate, especially over Bluetooth.
 
-## Install and update
+## Install
 
-Download **PocketBlindtest.apk** from a GitHub release and allow Android to install it. Use release APKs for normal installation: debug CI artifacts have a different signature and cannot update release installs.
+Download **PocketBlindtest.apk** from the [latest release](https://github.com/vincedelmas/PocketBlindtest/releases/latest), open it and allow Android to install it.
 
-All gameplay works in airplane mode. Only tapping **Check for updates** contacts GitHub. When the repository is public, this checks the latest stable release, downloads its APK on confirmation, and opens Android's installer after another tap when the download completes. Android always asks for installation approval. The system verifies package identity and signature when updating.
+In the app, tap **Check for updates** to download a new version. Android asks you to confirm installation. Only the update feature uses the internet; gameplay stays offline.
 
-While this repository is private, the anonymous update API cannot see releases. Download updates from GitHub in a signed-in browser instead. No GitHub token is embedded in the app. Making the repository public later enables the existing updater without an app change. Repository owner/name and APK asset name must remain stable (or the app must be updated first).
+Built for a Nothing Phone (3a) running Android 16. Other devices have not been tested.
 
-## CI and releases
+## Development
 
-No local build is needed or was run during creation. GitHub Actions runs debug assembly and Android lint for pushes and PRs. Java 17, Gradle 8.13 (checksum-verified wrapper), AGP 8.13.2 and Android SDK 36 are pinned. There is no Kotlin compiler, Compose compiler or third-party app dependency.
+Native Java with Android's built-in UI and audio APIs. No third-party app dependencies.
 
-Use Conventional Commits, especially squash PR titles:
+Builds run in GitHub Actions. CI builds a debug APK and runs Android lint on pushes and pull requests.
 
-- `feat: add random starting points`
-- `fix: handle missing music files`
-- `docs: explain installation`
+Use [Conventional Commits](https://www.conventionalcommits.org/), such as `feat: add a game mode` or `fix: handle missing songs`. Release Please opens a version pull request from changes on `main`. Merging it creates a release and triggers the signed APK build and upload.
 
-Release Please follows the MyLists pattern: changes on `main` maintain a version PR. Merge that PR to create a `vX.Y.Z` tag and GitHub release. The same workflow checks out that tag, builds/lints a signed release, and uploads the APK plus SHA-256 checksum. It does not rely on a tag-triggered workflow (GitHub's default token does not trigger those). `version.txt` is the source of truth. Android versionCode is `major * 1000000 + minor * 1000 + patch` (minor/patch must remain below 1000).
+### Release signing
 
-Required repository Actions secrets:
+The release workflow needs these repository secrets:
 
-- `SIGNING_KEYSTORE_BASE64`: base64 of the persistent release keystore.
-- `SIGNING_STORE_PASSWORD` and `SIGNING_KEY_PASSWORD`: its passwords.
+- `SIGNING_KEYSTORE_BASE64`
+- `SIGNING_STORE_PASSWORD`
+- `SIGNING_KEY_PASSWORD`
 
-The alias is `pocketblindtest`. Keep an independent secure backup of the key and passwords: losing them prevents updates to existing installations. Never commit a keystore. Repository Actions must be allowed to create PRs. As with MyLists, PRs created by the default GitHub token may need a manual CI dispatch or a human push to run PR checks; the release job itself always builds and lints the tagged code.
-
-The initial version is 0.1.0; the first feature commit after bootstrap creates the next release PR. APK compilation and on-device validation happen only through CI and the phone, not in the creation workspace.
-
-## Device smoke test
-
-- Test permission allow/deny/settings recovery and an empty library.
-- Try all four durations with speaker and Bluetooth; check intros with silence.
-- Check wrong guess, correct guess, skip, replay and final reveal.
-- Rotate mid-round; background the app or unplug headphones during playback.
-- Test airplane-mode gameplay and offline update failure.
-- Install two successive signed release APKs to verify in-place updates.
+The key alias is `pocketblindtest`. Keep a secure backup of the signing key and passwords: future updates must use the same key. Never commit them.
