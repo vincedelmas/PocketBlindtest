@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/vincedelmas/PocketBlindtest/compare/v0.2.0...v0.2.1) (2026-11-13)
+
+
+### Bug Fixes
+
+* build APK only when publishing a release ([898bb19](https://github.com/vincedelmas/PocketBlindtest/commit/898bb1909e887f85ea9fbdff5e3f3322edc6f1e2))
+
 ## [0.2.0](https://github.com/vincedelmas/PocketBlindtest/compare/v0.1.0...v0.2.0) (2026-11-13)
 
 
