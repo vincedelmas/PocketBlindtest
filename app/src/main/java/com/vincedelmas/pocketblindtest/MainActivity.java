@@ -110,14 +110,17 @@ public final class MainActivity extends AppCompatActivity {
         });
         toolbar=new MaterialToolbar(this); toolbar.setTitle("Pocket Blindtest");
         toolbar.setTitleTextColor(Color.rgb(240,235,225)); toolbar.setOverflowIcon(getDrawable(R.drawable.ic_more_vert));
-        toolbar.getMenu().add(0,1,0,"Game modes");
-        toolbar.getMenu().add(0,2,1,"History & statistics");
-        toolbar.getMenu().add(0,3,2,"Session summary");
-        toolbar.getMenu().add(0,4,3,"Replace unplayable song").setVisible(false);
-        toolbar.getMenu().add(0,5,4,"Refresh music library");
-        toolbar.getMenu().add(0,6,5,"Check for updates");
-        toolbar.getMenu().add(0,7,6,"Reset statistics…");
-        toolbar.getMenu().add("Version "+BuildConfig.VERSION_NAME).setEnabled(false);
+        toolbar.getMenu().add(1,1,0,"Game modes");
+        toolbar.getMenu().add(1,2,1,"History & statistics");
+        toolbar.getMenu().add(2,3,2,"Session summary").setEnabled(false);
+        toolbar.getMenu().add(2,4,3,"Replace unplayable song").setVisible(false);
+        toolbar.getMenu().add(3,5,4,"Refresh music library");
+        toolbar.getMenu().add(3,6,5,"Check for updates");
+        SpannableString resetLabel=new SpannableString("Reset statistics…");
+        resetLabel.setSpan(new android.text.style.ForegroundColorSpan(Color.rgb(255,180,171)),0,resetLabel.length(),Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        toolbar.getMenu().add(4,7,6,resetLabel);
+        toolbar.getMenu().add(5,8,7,"Version "+BuildConfig.VERSION_NAME).setEnabled(false);
+        toolbar.getMenu().setGroupDividerEnabled(true);
         toolbar.setOnMenuItemClickListener(item -> {
             switch(item.getItemId()) {
                 case 1 -> showHome();
@@ -194,7 +197,7 @@ public final class MainActivity extends AppCompatActivity {
         target=bag.remove(bag.size()-1); roundId=UUID.randomUUID().toString(); attempt=0; finished=false; solved=false; saveGame(); renderRound();
     }
     private void renderRound() {
-        cancelSearch(); screen="round"; screenVersion++; toolbar.getMenu().findItem(4).setVisible(target!=null);
+        cancelSearch(); screen="round"; screenVersion++; toolbar.getMenu().findItem(4).setVisible(target!=null); toolbar.getMenu().findItem(3).setEnabled(sessionId!=null);
         if(finished) { reveal(); return; }
         content.animate().cancel(); content.setAlpha(1f); content.setTranslationY(0);
         content.removeAllViews();
@@ -294,7 +297,7 @@ public final class MainActivity extends AppCompatActivity {
         reveal();
     }
     private void reveal() {
-        cancelSearch(); screen="round"; screenVersion++; toolbar.getMenu().findItem(4).setVisible(target!=null);
+        cancelSearch(); screen="round"; screenVersion++; toolbar.getMenu().findItem(4).setVisible(target!=null); toolbar.getMenu().findItem(3).setEnabled(sessionId!=null);
         content.animate().cancel();
         content.removeAllViews();
         content.post(() -> ((ScrollView)root.getParent()).smoothScrollTo(0,0));
@@ -388,7 +391,7 @@ public final class MainActivity extends AppCompatActivity {
         return found+" / "+played+" solved · "+(played==0?"—":Math.round(100f*found/played)+"%");
     }
     private void beginPage(String page) {
-        stopAudio(); cancelSearch(); toolbar.getMenu().findItem(4).setVisible(false); play=null; screen=page; screenVersion++;
+        stopAudio(); cancelSearch(); toolbar.getMenu().findItem(4).setVisible(false); toolbar.getMenu().findItem(3).setEnabled(sessionId!=null); play=null; screen=page; screenVersion++;
         content.animate().cancel(); content.setAlpha(1); content.setTranslationY(0); content.removeAllViews();
         content.post(() -> ((ScrollView)root.getParent()).smoothScrollTo(0,0));
         getSystemService(InputMethodManager.class).hideSoftInputFromWindow(content.getWindowToken(),0);
@@ -464,9 +467,10 @@ public final class MainActivity extends AppCompatActivity {
             .setNegativeButton("Keep song",null).setPositiveButton("Replace song",(dialog,which) -> reportSong()).show();
     }
     private void confirmReset() {
-        new MaterialAlertDialogBuilder(this).setTitle("Reset all statistics?")
+        var confirmation=new MaterialAlertDialogBuilder(this).setTitle("Reset all statistics?")
             .setMessage("Permanently delete all session history and statistics, and end the current game. Your music files are kept. This cannot be undone.")
             .setNegativeButton("Cancel",null).setPositiveButton("Reset statistics",(dialog,which) -> resetStats()).show();
+        confirmation.getButton(DialogInterface.BUTTON_POSITIVE).setTextColor(Color.rgb(255,180,171));
     }
     private void resetStats() {
         stopAudio();
@@ -523,8 +527,13 @@ public final class MainActivity extends AppCompatActivity {
             for(GameHistory.Session session:sessions) {
                 String date=java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM,java.text.DateFormat.SHORT).format(new Date(session.started()));
                 String title=session.size()==0?"Infinite mode":session.size()+" songs · "+session.played()+" / "+session.size()+" completed";
-                Button row=button(content,title+"\n"+score(session.found(),session.played())+"\n"+date);
-                row.setOnClickListener(v -> showStats(session.id()));
+                LinearLayout row=card(content);
+                TextView heading=text(row,title,17,Color.rgb(240,235,225)); heading.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL)); heading.setPadding(0,dp(10),0,dp(4));
+                TextView performance=text(row,score(session.found(),session.played()),14,Color.rgb(165,218,179)); performance.setPadding(0,dp(4),0,dp(6));
+                TextView timestamp=text(row,date+"   →",12,MUTED); timestamp.setPadding(0,0,0,dp(12));
+                View container=(View)row.getParent(); container.setClickable(true); container.setFocusable(true);
+                container.setContentDescription(title+", "+score(session.found(),session.played())+", "+date);
+                container.setOnClickListener(v -> showStats(session.id()));
             }
         } else {
             button(content,"All-time statistics").setOnClickListener(v -> showStats(null));
