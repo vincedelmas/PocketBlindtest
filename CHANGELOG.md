@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/vincedelmas/PocketBlindtest/compare/v0.3.0...v0.4.0) (2026-11-13)
+
+
+### Features
+
+* redesign song reveal and match Heardle clip progression ([25ab277](https://github.com/vincedelmas/PocketBlindtest/commit/25ab277c7d04621e1ce9da7379b329b72d2d466a))
+
 ## [0.3.0](https://github.com/vincedelmas/PocketBlindtest/compare/v0.2.2...v0.3.0) (2026-11-13)
 
 
