@@ -16,9 +16,10 @@ def java_sql(source_expression, **values):
 class HistorySqlTest(unittest.TestCase):
     def setUp(self):
         self.db = sqlite3.connect(':memory:')
-        for statement in re.findall(r'db.execSQL\("([^"]+)"\)', SOURCE):
+        create_body = SOURCE.split('public void onCreate', 1)[1].split('@Override public void onUpgrade', 1)[0]
+        for statement in re.findall(r'db.execSQL\("([^"]+)"\)', create_body):
             self.db.execute(statement)
-        self.db.executemany('INSERT INTO sessions VALUES (?, ?, ?)', [('one', 5, 1), ('two', 0, 2)])
+        self.db.executemany('INSERT INTO sessions (id,size,started) VALUES (?, ?, ?)', [('one', 5, 1), ('two', 0, 2)])
         self.add('a', 'one', 'Rock', 1999, 1, 1000)
         self.add('b', 'one', 'rock', 2000, 0, 16000)
         self.add('c', 'two', 'Unknown', 0, 1, 4000)
@@ -43,6 +44,37 @@ class HistorySqlTest(unittest.TestCase):
         self.assertEqual(self.totals('one'), (2, 1, 1000.0))
         self.assertEqual(self.totals(), (3, 2, 2500.0))
         self.assertEqual(self.totals('missing'), (0, 0, None))
+
+    def scoped_totals(self, mode='song', genres=''):
+        body = SOURCE.split('Summary summary(String session,String mode,String genres)', 1)[1]
+        where = re.search(r'String where=session==null\?"([^"]+)"', body).group(1)
+        expression = re.findall(r'rawQuery\((.+),args\)', SOURCE)[0]
+        return self.db.execute(java_sql(expression, where=where), (mode, genres)).fetchone()
+
+    def test_mode_and_exact_genre_selection_are_isolated(self):
+        for key, mode, genres in [('rock', 'song', '["rock"]'),
+                                  ('mix', 'song', '["jazz","rock"]'),
+                                  ('artist', 'artist', ''),
+                                  ('artist-rock', 'artist', '["rock"]')]:
+            self.db.execute('INSERT INTO sessions VALUES (?,5,3,?,?)', (key, mode, genres))
+            self.add(key, key, 'Rock', 2000, 1, 2000)
+        self.assertEqual(self.scoped_totals(), (3, 2, 2500.0))
+        self.assertEqual(self.scoped_totals('song', '["rock"]'), (1, 1, 2000.0))
+        self.assertEqual(self.scoped_totals('song', '["jazz","rock"]'), (1, 1, 2000.0))
+        self.assertEqual(self.scoped_totals('artist'), (1, 1, 2000.0))
+        self.assertEqual(self.scoped_totals('artist', '["rock"]'), (1, 1, 2000.0))
+        expression = next(q for q in re.findall(r'rawQuery\("([^"]+)"', SOURCE) if 'ORDER BY s.started' in q)
+        self.assertEqual({r[0] for r in self.db.execute(expression, ('song', ''))}, {'one', 'two'})
+
+    def test_v1_migration_preserves_history_under_song_all_genres(self):
+        old = sqlite3.connect(':memory:')
+        old.execute('CREATE TABLE sessions (id TEXT PRIMARY KEY,size INTEGER NOT NULL,started INTEGER NOT NULL)')
+        old.execute("INSERT INTO sessions VALUES ('legacy',5,1)")
+        upgrade = SOURCE.split('public void onUpgrade', 1)[1].split('String start', 1)[0]
+        for statement in re.findall(r'db.execSQL\("([^"]+)"\)', upgrade):
+            old.execute(statement)
+        self.assertEqual(old.execute('SELECT * FROM sessions').fetchone(), ('legacy', 5, 1, 'song', ''))
+        old.close()
 
     def test_round_saved_twice_does_not_double_count(self):
         self.add('a', 'one', 'Rock', 1999, 1, 1000)
@@ -87,7 +119,7 @@ class HistorySqlTest(unittest.TestCase):
                 self.db.execute(statement)
         self.assertEqual(self.totals(), (0, 0, None))
         self.assertEqual(self.db.execute('SELECT COUNT(*) FROM sessions').fetchone()[0], 0)
-        self.db.execute('INSERT INTO sessions VALUES (?, ?, ?)', ('new', 5, 3))
+        self.db.execute('INSERT INTO sessions (id,size,started) VALUES (?, ?, ?)', ('new', 5, 3))
         self.add('new-round', 'new', 'Jazz', 2004, 1, 2000)
         self.assertEqual(self.totals('new'), (1, 1, 2000.0))
 

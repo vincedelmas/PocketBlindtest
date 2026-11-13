@@ -16,19 +16,20 @@ import java.util.function.Consumer;
 final class SongChoices extends RecyclerView.Adapter<SongChoices.Holder> {
     private List<MainActivity.Track> songs=List.of();
     private long selected=-1;
+    private final boolean artistOnly;
     private final Consumer<MainActivity.Track> submit;
-    SongChoices(Consumer<MainActivity.Track> submit) { this.submit=submit; setHasStableIds(true); }
+    SongChoices(Consumer<MainActivity.Track> submit,boolean artistOnly) { this.submit=submit; this.artistOnly=artistOnly; setHasStableIds(true); }
     void show(List<MainActivity.Track> matches) { songs=matches; selected=-1; notifyDataSetChanged(); }
     @Override public long getItemId(int position) { return songs.get(position).id(); }
     @Override public int getItemCount() { return songs.size(); }
     @Override public Holder onCreateViewHolder(ViewGroup parent,int type) { return new Holder(parent.getContext()); }
     @Override public void onBindViewHolder(Holder holder,int position) {
         MainActivity.Track song=songs.get(position); boolean checked=selected==song.id();
-        holder.title.setText(song.title()); holder.artist.setText(song.artist()); holder.radio.setChecked(checked);
+        holder.title.setText(artistOnly?song.artist():song.title()); holder.artist.setText(song.artist()); holder.artist.setVisibility(artistOnly?View.GONE:View.VISIBLE); holder.radio.setChecked(checked);
         holder.card.setStrokeWidth(dp(holder.card.getContext(),checked?2:1));
         holder.card.setStrokeColor(checked?0xffe8d8bd:0xff41403c);
         holder.confirm.setVisibility(checked?View.VISIBLE:View.GONE);
-        holder.card.setContentDescription(song.label()+(checked?", selected":""));
+        holder.card.setContentDescription((artistOnly?song.artist():song.label())+(checked?", selected":""));
         View.OnClickListener select=v -> {
             int index=holder.getBindingAdapterPosition(); if(index==RecyclerView.NO_POSITION) return;
             long old=selected; selected=songs.get(index).id();

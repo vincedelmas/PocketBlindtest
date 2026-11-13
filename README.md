@@ -5,19 +5,25 @@ A simple music guessing game for Android 16. Play with songs stored on your phon
 ## How to play
 
 1. Allow access to your music library.
-2. Choose infinite mode or a session of 5, 10, 15 or 20 songs.
-3. Listen to the intro, search by title or artist, select a song and tap **Submit guess**.
+2. Choose **Song** or **Artist**, optionally select genres from your phone, then choose infinite mode or 5, 10, 15 or 20 rounds.
+3. Listen to the intro, search for a song (Song mode) or a unique artist (Artist mode), select your answer and tap **Submit guess**.
 4. Guess the song in six attempts: **1 → 2 → 4 → 7 → 11 → 16 seconds**.
 
 Songs must be at least 16 seconds long.
 
-A wrong guess or skip unlocks a longer clip. Replay as often as you like. Songs are shuffled without repeating until you've played through your library.
+A wrong guess or skip unlocks a longer clip. Replay as often as you like. Songs are shuffled without repeating until you've played through the selected pool. Artist mode hides song titles, excludes missing artist tags and does not repeat artists until the pool is exhausted. Artist matching ignores case and extra spaces; full artist tags, including featured artists, stay intact.
 
 Clips skip up to ten seconds of leading silence. Each attempt starts at the same point, with its length measured in decoded audio samples. Bluetooth can delay when playback reaches your headphones.
 
 ## Sessions and statistics
 
-Fixed sessions use distinct songs and finish with a summary. Infinite mode continues until you stop. You can resume the current session after closing the app.
+Fixed sessions use distinct songs or artists and finish with a summary. Infinite mode continues until you stop. You can resume the current session after closing the app.
+
+Genre selections apply to every session length and stay fixed when resuming. Fixed sessions require enough matching songs or unique artists. An empty selection means **All genres**; **Unknown** includes music without a genre tag.
+
+Statistics are separate for Song and Artist modes and for each exact genre selection. For example, Rock and Rock + Jazz have separate histories, totals and rankings; neither contributes to All genres. Use **Choose statistics** to switch between them. Existing history stays under **Song · All genres**.
+
+After either success or six failed attempts, **Open in music player** opens the full local track in an installed music app. Return to Pocket Blindtest to resume; opening the song does not advance the round.
 
 Session and all-time statistics show your score, percentage, average clip length at a correct guess, and breakdowns by genre, five-year period and decade. Best and hardest categories need at least three results each. Missing music tags appear as **Unknown** and are excluded from rankings.
 
