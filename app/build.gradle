@@ -1,0 +1,29 @@
+plugins { id 'com.android.application' }
+def appVersion = rootProject.file('version.txt').text.trim()
+def parts = appVersion.tokenize('.').collect { it.toInteger() }
+android {
+    namespace 'com.vincedelmas.pocketblindtest'
+    compileSdk 36
+    defaultConfig {
+        applicationId 'com.vincedelmas.pocketblindtest'
+        minSdk 36
+        targetSdk 36
+        versionCode parts[0] * 1000000 + parts[1] * 1000 + parts[2]
+        versionName appVersion
+    }
+    signingConfigs {
+        release {
+            if (System.getenv('SIGNING_STORE_FILE')) {
+                storeFile file(System.getenv('SIGNING_STORE_FILE'))
+                storePassword System.getenv('SIGNING_STORE_PASSWORD')
+                keyAlias System.getenv('SIGNING_KEY_ALIAS')
+                keyPassword System.getenv('SIGNING_KEY_PASSWORD')
+            }
+        }
+    }
+    buildTypes {
+        release { signingConfig signingConfigs.release; minifyEnabled true; shrinkResources true; proguardFiles getDefaultProguardFile('proguard-android-optimize.txt') }
+    }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+    buildFeatures { buildConfig true }
+}
