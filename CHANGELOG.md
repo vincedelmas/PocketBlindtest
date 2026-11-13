@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/vincedelmas/PocketBlindtest/compare/v0.5.0...v0.6.0) (2026-11-13)
+
+
+### Features
+
+* adopt Material controls and virtualize song search ([86896f0](https://github.com/vincedelmas/PocketBlindtest/commit/86896f021a094a87273c454074db92aa60327fd9))
+
 ## [0.5.0](https://github.com/vincedelmas/PocketBlindtest/compare/v0.4.0...v0.5.0) (2026-11-13)
 
 
