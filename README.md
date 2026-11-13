@@ -24,7 +24,7 @@ Built for a Nothing Phone (3a) running Android 16. Other devices have not been t
 
 Native Java with Android's built-in UI and audio APIs. No third-party app dependencies.
 
-Builds run in GitHub Actions. CI builds a debug APK and runs Android lint on pushes and pull requests.
+Builds run only in GitHub Actions after merging a Release Please version pull request. The release job builds and lints the signed APK, then uploads it to the GitHub release.
 
 Use [Conventional Commits](https://www.conventionalcommits.org/), such as `feat: add a game mode` or `fix: handle missing songs`. Release Please opens a version pull request from changes on `main`. Merging it creates a release and triggers the signed APK build and upload.
 
