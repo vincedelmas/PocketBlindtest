@@ -18,6 +18,11 @@ final class ClipAudio implements AutoCloseable {
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private volatile boolean cancelled;
     private AudioTrack track;
+    private int audioFrames;
+    float progress() {
+        if(track==null || audioFrames==0 || track.getState()!=AudioTrack.STATE_INITIALIZED) return 0;
+        return Math.min(1f, (float)Integer.toUnsignedLong(track.getPlaybackHeadPosition())/audioFrames);
+    }
 
     ClipAudio(Context context, Handler main) { this.context=context; this.main=main; }
 
@@ -40,6 +45,7 @@ final class ClipAudio implements AutoCloseable {
                             @Override public void onPeriodicNotification(AudioTrack t) {}
                         },main);
                         track.setNotificationMarkerPosition(pcm.bytes.length/(2*pcm.channels)-1);
+                        audioFrames=pcm.bytes.length/(2*pcm.channels)-pcm.rate/2;
                         track.play(); started.run();
                     } catch(Exception e) { if(!cancelled) failed.run(); }
                 });

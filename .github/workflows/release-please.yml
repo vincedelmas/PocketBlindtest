@@ -48,6 +48,8 @@ jobs:
         run: |
           test -n "$KEYSTORE_BASE64"
           printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$SIGNING_STORE_FILE"
+      - name: Check history queries
+        run: python3 -m unittest discover -s tests -v
       - name: Build signed release and lint
         run: ./gradlew :app:assembleRelease :app:lintRelease --no-daemon
       - name: Publish APK and checksum

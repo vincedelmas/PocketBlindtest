@@ -41,28 +41,41 @@ public final class MainActivity extends Activity {
     private LinearLayout root, content, choices, stages;
     private TextView status, counter, message;
     private Button play, skip;
+    private Track selected;
+    private GameHistory history;
+    private String sessionId, roundId, screen="home";
+    private int sessionSize, screenVersion;
+    private final HashSet<Long> excluded=new HashSet<>();
+    private String statsSession, restoreScreen, restoreStats;
+    private final Runnable playbackTick=new Runnable() {
+        @Override public void run() {
+            if(!playing || player==null || !(play instanceof PlaybackButton)) return;
+            ((PlaybackButton)play).setProgress(player.progress());
+            main.postDelayed(this,32);
+        }
+    };
     private EditText search;
     private Track target;
     private int attempt, rounds, wins;
-    private boolean finished, loading, playing, solved;
+    private boolean finished, loading, playing, solved, exhausted;
     private ClipAudio player;
     private AudioFocusRequest focus;
     private AudioManager audio;
-    private Bundle restored;
     private long downloadId = -1;
     private final BroadcastReceiver noisy = new BroadcastReceiver() {
         @Override public void onReceive(Context c, Intent i) { stopAudio(); }
     };
 
-    private record Track(long id, String title, String artist) {
+    private record Track(long id, String title, String artist, String genre, int year) {
         String label() { return title + " — " + artist; }
         Uri uri() { return ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id); }
     }
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
-        restored = state;
-        if (state != null) { rounds = state.getInt("rounds"); wins = state.getInt("wins"); }
+        history=new GameHistory(this);
+        if(state!=null) { restoreScreen=state.getString("screen"); restoreStats=state.getString("statsSession"); }
+        getOnBackInvokedDispatcher().registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, () -> { if(screen.equals("home")) finish(); else showHome(); });
         downloadId = getPreferences(0).getLong("download", -1);
         if (!BuildConfig.VERSION_NAME.equals(getPreferences(0).getString("downloadFrom", BuildConfig.VERSION_NAME))) {
             downloadId = -1;
@@ -85,6 +98,9 @@ public final class MainActivity extends Activity {
         settings.setLayoutParams(new LinearLayout.LayoutParams(dp(56),dp(48)));
         settings.setOnClickListener(v -> {
             PopupMenu menu = new PopupMenu(this,settings);
+            menu.getMenu().add("Game modes").setOnMenuItemClickListener(item -> { showHome(); return true; });
+            menu.getMenu().add("History & statistics").setOnMenuItemClickListener(item -> { showStats(null); return true; });
+            menu.getMenu().add("Session summary").setOnMenuItemClickListener(item -> { if(sessionId!=null) showStats(sessionId); else showStats(null); return true; });
             menu.getMenu().add("Refresh music library").setOnMenuItemClickListener(item -> { loadLibrary(); return true; });
             menu.getMenu().add("Check for updates").setOnMenuItemClickListener(item -> { checkUpdate(settings); return true; });
             menu.getMenu().add("Version "+BuildConfig.VERSION_NAME).setEnabled(false);
@@ -116,14 +132,15 @@ public final class MainActivity extends Activity {
     }
     private void loadLibrary() {
         if (loading) return;
+        stopAudio(); saveGame(); screenVersion++;
         if (checkSelfPermission(Manifest.permission.READ_MEDIA_AUDIO)!=PackageManager.PERMISSION_GRANTED) { permissionScreen(); return; }
         stopAudio(); loading=true; content.removeAllViews(); text(content,"Reading your library…",18,MUTED);
         io.execute(() -> {
             ArrayList<Track> found = new ArrayList<>(); String failure = null;
-            String[] columns = {MediaStore.Audio.Media._ID,MediaStore.Audio.Media.TITLE,MediaStore.Audio.Media.ARTIST};
+            String[] columns = {MediaStore.Audio.Media._ID,MediaStore.Audio.Media.TITLE,MediaStore.Audio.Media.ARTIST,MediaStore.Audio.Media.GENRE,MediaStore.Audio.Media.YEAR};
             try (Cursor c = getContentResolver().query(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, columns,
                     MediaStore.Audio.Media.IS_MUSIC+" != 0 AND "+MediaStore.Audio.Media.DURATION+" >= "+CLIPS[CLIPS.length-1],null,MediaStore.Audio.Media.TITLE+" ASC")) {
-                if(c!=null) while(c.moveToNext()) found.add(new Track(c.getLong(0),c.getString(1)==null?"Untitled":c.getString(1),c.getString(2)==null?"Unknown artist":c.getString(2)));
+                if(c!=null) while(c.moveToNext()) found.add(new Track(c.getLong(0),c.getString(1)==null?"Untitled":c.getString(1),c.getString(2)==null?"Unknown artist":c.getString(2),genre(c.getString(3)),year(c.getInt(4))));
             } catch (Exception e) { failure="Could not read music. Check audio permission, then refresh."; }
             String error=failure;
             main.post(() -> {
@@ -133,29 +150,31 @@ public final class MainActivity extends Activity {
                     content.removeAllViews(); text(content,error!=null?error:"No songs found",23,Color.WHITE);
                     text(content,"Copy music files onto your phone, then refresh. Songs must be at least 16 seconds long and indexed as music by Android.",16,MUTED); return;
                 }
-                if(restored!=null) {
-                    long id=restored.getLong("target",-1);
-                    target=tracks.stream().filter(t->t.id==id).findFirst().orElse(null);
-                    attempt=Math.max(0,Math.min(CLIPS.length-1,restored.getInt("attempt"))); finished=restored.getBoolean("finished"); solved=restored.getBoolean("solved"); restored=null;
-                    if(target!=null) { renderRound(); return; }
-                }
-                nextRound();
+                restoreGame();
+                String page=restoreScreen; restoreScreen=null;
+                if("stats".equals(page)) showStats(restoreStats);
+                else if("round".equals(page) && target!=null) renderRound();
+                else showHome();
             });
         });
     }
     private void nextRound() {
         stopAudio();
-        if(bag.isEmpty()) { bag.addAll(tracks); Collections.shuffle(bag,random);
+        if(sessionSize>0 && rounds>=sessionSize) { showStats(sessionId); return; }
+        if(bag.isEmpty() && sessionSize>0 && rounds>0) { exhausted=true; target=null; saveGame(); toast("No more playable songs in this session."); showStats(sessionId); return; }
+        if(bag.isEmpty()) { for(Track t:tracks) if(!excluded.contains(t.id)) bag.add(t); Collections.shuffle(bag,random);
+            if(bag.isEmpty()) { exhausted=true; target=null; saveGame(); toast("No playable songs remain. Start a new session to try them again."); showStats(sessionId); return; }
             if(bag.size()>1 && target!=null && bag.get(bag.size()-1).id==target.id) Collections.swap(bag,0,bag.size()-1);
         }
-        target=bag.remove(bag.size()-1); attempt=0; finished=false; solved=false; renderRound();
+        target=bag.remove(bag.size()-1); roundId=UUID.randomUUID().toString(); attempt=0; finished=false; solved=false; saveGame(); renderRound();
     }
     private void renderRound() {
+        screen="round"; screenVersion++;
         if(finished) { reveal(); return; }
         content.animate().cancel(); content.setAlpha(1f); content.setTranslationY(0);
         content.removeAllViews();
         content.post(() -> ((ScrollView)root.getParent()).smoothScrollTo(0,0));
-        counter=eyebrow(content,"ROUND "+String.format(Locale.ROOT,"%02d",rounds+1)+"   /   "+tracks.size()+" SONGS");
+        counter=eyebrow(content,"SONG "+(rounds+1)+(sessionSize>0?" / "+sessionSize:"   ·   INFINITE"));
         RecordArtwork artwork=new RecordArtwork(this,false);
         addArtwork(content,artwork,212);
         status=centered(content,"",25,Color.WHITE);
@@ -166,7 +185,7 @@ public final class MainActivity extends Activity {
             TextView stage=text(stages,duration(CLIPS[i])+"s",12,MUTED); stage.setPadding(0,0,0,0); stage.setGravity(Gravity.CENTER); stage.setTypeface(Typeface.MONOSPACE);
             LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(40),1); lp.setMargins(dp(3),0,dp(3),dp(14)); stage.setLayoutParams(lp);
         }
-        play=button(content,"Play"); primary(play); play.setOnClickListener(v -> playClip());
+        play=playbackButton(content,"Play"); primary(play); play.setOnClickListener(v -> playClip());
         message=centered(content,"Attempt 1 of "+CLIPS.length,13,MUTED);
         search=new EditText(this); search.setSingleLine(true); search.setTextColor(Color.WHITE); search.setTextSize(16); search.setHintTextColor(MUTED); search.setHint("Search title or artist");
         search.setPadding(dp(20),dp(16),dp(20),dp(16)); search.setBackground(surface(Color.rgb(28,29,30),20));
@@ -176,10 +195,11 @@ public final class MainActivity extends Activity {
         choices=new LinearLayout(this); choices.setOrientation(LinearLayout.VERTICAL); content.addView(choices);
         search.addTextChangedListener(new TextWatcher() {
             public void beforeTextChanged(CharSequence s,int start,int count,int after) {}
-            public void onTextChanged(CharSequence s,int start,int before,int count) { showMatches(s.toString()); }
+            public void onTextChanged(CharSequence s,int start,int before,int count) { selected=null; showMatches(s.toString()); }
             public void afterTextChanged(Editable s) {}
         });
-        skip=button(content,"Skip"); skip.setOnClickListener(v -> miss("Skipped."));
+        skip=button(content,"Skip attempt"); skip.setOnClickListener(v -> miss("Skipped."));
+        button(content,"No sound? Replace song").setOnClickListener(v -> reportSong());
         updateAttempt();
     }
     private static String normalize(String s) {
@@ -189,8 +209,23 @@ public final class MainActivity extends Activity {
         choices.removeAllViews(); if(finished || query.isBlank()) return;
         String key=normalize(query); int shown=0;
         for(Track t:tracks) if(normalize(t.label()).contains(key)) {
-            button(choices,t.label()).setOnClickListener(v -> new AlertDialog.Builder(this).setTitle("Your guess")
-                .setMessage(t.label()).setNegativeButton("Cancel",null).setPositiveButton("Submit",(d,w)->guess(t)).show());
+            boolean checked=selected!=null && selected.id==t.id;
+            LinearLayout row=new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL); row.setPadding(dp(16),dp(4),dp(16),dp(4));
+            GradientDrawable background=surface(checked?Color.rgb(55,51,45):Color.rgb(26,27,28),18);
+            if(checked) background.setStroke(dp(1),Color.rgb(220,205,180));
+            LinearLayout holder=new LinearLayout(this); holder.setOrientation(LinearLayout.VERTICAL);
+            holder.setPadding(dp(4),0,dp(4),dp(4)); holder.setBackground(background);
+            row.setBackground(new RippleDrawable(ColorStateList.valueOf(0x22ffffff),null,null));
+            holder.addView(row,new LinearLayout.LayoutParams(-1,-2));
+            LinearLayout labels=new LinearLayout(this); labels.setOrientation(LinearLayout.VERTICAL);
+            row.addView(labels,new LinearLayout.LayoutParams(0,-2,1));
+            TextView title=text(labels,t.title,16,Color.WHITE); title.setPadding(0,dp(10),0,dp(3));
+            TextView artist=text(labels,t.artist,13,MUTED); artist.setPadding(0,0,0,dp(10));
+            TextView indicator=text(row,checked?"✓":"○",20,checked?Color.rgb(240,235,225):MUTED); indicator.setPadding(dp(12),0,0,0);
+            row.setFocusable(true); row.setClickable(true); row.setContentDescription(t.label()+(checked?", selected":"")); row.setSelected(checked);
+            row.setOnClickListener(v -> { selected=t; showMatches(query); });
+            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2); lp.topMargin=dp(8); choices.addView(holder,lp);
+            if(checked) { Button confirm=button(holder,"Submit guess"); primary(confirm); confirm.setOnClickListener(v -> guess(t)); }
             if(++shown==8) break;
         }
         if(shown==0) text(choices,"No matching songs",14,MUTED);
@@ -199,13 +234,13 @@ public final class MainActivity extends Activity {
         if(finished) return;
         // Treat duplicate files with identical title and artist as the same answer.
         if(choice.id==target.id || normalize(choice.label()).equals(normalize(target.label()))) {
-            wins++; solved=true; finishRound();
+            solved=true; finishRound();
         } else miss("Incorrect. A longer clip is available.");
     }
     private void miss(String feedback) {
         if(finished) return; stopAudio();
         if(attempt==CLIPS.length-1) finishRound();
-        else { attempt++; search.setText(""); message.setText(feedback+"  "+(attempt+1)+" / "+CLIPS.length); updateAttempt(); }
+        else { attempt++; search.setText(""); message.setText(feedback+"  "+(attempt+1)+" / "+CLIPS.length); updateAttempt(); saveGame(); }
     }
     private void updateAttempt() {
         status.setText("Guess the song"); play.setText("▶   Play "+clipLabel());
@@ -219,11 +254,15 @@ public final class MainActivity extends Activity {
     private static String duration(int ms) { return java.math.BigDecimal.valueOf(ms,3).stripTrailingZeros().toPlainString(); }
     private String clipLabel() { return duration(CLIPS[attempt])+" s"; }
     private void finishRound() {
-        stopAudio(); finished=true; rounds++;
+        stopAudio();
+        try { history.record(roundId,sessionId,target.id,target.title,target.artist,target.genre,target.year,solved,CLIPS[attempt],attempt+1); }
+        catch(Exception e) { solved=false; message.setText("Could not save the result. Try submitting again."); return; }
+        finished=true; rounds++; if(solved) wins++; saveGame();
         getSystemService(InputMethodManager.class).hideSoftInputFromWindow(content.getWindowToken(),0);
         reveal();
     }
     private void reveal() {
+        screen="round"; screenVersion++;
         content.animate().cancel();
         content.removeAllViews();
         content.post(() -> ((ScrollView)root.getParent()).smoothScrollTo(0,0));
@@ -244,9 +283,11 @@ public final class MainActivity extends Activity {
             LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(dp(22),dp(5)); lp.setMargins(dp(3),0,dp(3),0); resultRow.addView(dot,lp);
         }
         centered(content,solved?"Found in "+(attempt+1)+" of "+CLIPS.length+" attempts":"All "+CLIPS.length+" attempts played",13,MUTED);
-        Button next=button(content,"Next song   →"); primary(next); next.setOnClickListener(v -> nextRound());
-        play=button(content,"▶   Replay "+duration(CLIPS[CLIPS.length-1])+" s"); play.setOnClickListener(v -> playClip());
-        message=centered(content,wins+" / "+rounds+" solved this session",13,MUTED);
+        Button next=button(content,sessionSize>0 && rounds>=sessionSize?"See session summary   →":"Next song   →"); primary(next); next.setOnClickListener(v -> nextRound());
+        play=playbackButton(content,"▶   Replay "+duration(CLIPS[CLIPS.length-1])+" s"); play.setOnClickListener(v -> playClip());
+        message=centered(content,score(wins,rounds)+" this session",13,MUTED);
+        button(content,"Session statistics").setOnClickListener(v -> showStats(sessionId));
+        button(content,"No sound? Replace song").setOnClickListener(v -> reportSong());
         content.setAlpha(0f); content.setTranslationY(dp(12));
         content.animate().alpha(1f).translationY(0).setDuration(240).start();
         loadArtwork(artwork,target);
@@ -293,15 +334,179 @@ public final class MainActivity extends Activity {
         playing=true; play.setEnabled(false); play.setText("Preparing…");
         ClipAudio current=new ClipAudio(this,main); player=current;
         current.play(target.uri(),finished?CLIPS[CLIPS.length-1]:CLIPS[attempt],attributes,
-            () -> { if(player==current) play.setText("Playing…"); },
+            () -> { if(player==current) { play.setText("Playing…"); main.post(playbackTick); } },
             () -> { if(player==current) stopAudio(); },
-            () -> { if(player==current) { stopAudio(); message.setText("Cannot play this song. Skip or refresh the library."); } });
+            () -> { if(player==current) { stopAudio(); message.setText("Cannot play this song. Tap No sound? Replace song to exclude it."); } });
     }
     private void stopAudio() {
+        main.removeCallbacks(playbackTick);
+        if(play instanceof PlaybackButton) ((PlaybackButton)play).setProgress(0);
         if(player!=null) { player.close(); player=null; }
         if(focus!=null) { audio.abandonAudioFocusRequest(focus); focus=null; }
         playing=false;
         if(play!=null) { play.setEnabled(true); play.setText(finished?"▶   Replay "+duration(CLIPS[CLIPS.length-1])+" s":"▶   Play "+clipLabel()); }
+    }
+
+    private static String genre(String value) {
+        return value==null || value.isBlank() || value.trim().equalsIgnoreCase("<unknown>") || value.trim().equalsIgnoreCase("unknown")?"Unknown":value.trim();
+    }
+    private static int year(int value) { return value>=1000 && value<=2100?value:0; }
+    private static String score(int found,int played) {
+        return found+" / "+played+" solved · "+(played==0?"—":Math.round(100f*found/played)+"%");
+    }
+    private void beginPage(String page) {
+        stopAudio(); play=null; screen=page; screenVersion++;
+        content.animate().cancel(); content.setAlpha(1); content.setTranslationY(0); content.removeAllViews();
+        content.post(() -> ((ScrollView)root.getParent()).smoothScrollTo(0,0));
+        getSystemService(InputMethodManager.class).hideSoftInputFromWindow(content.getWindowToken(),0);
+    }
+    private void showHome() {
+        beginPage("home"); eyebrow(content,"GAME MODES");
+        centered(content,"Choose a session",26,Color.WHITE);
+        if(sessionId!=null) {
+            Button resume=button(content,sessionEnded()?"View session summary":"Continue "+(sessionSize==0?"infinite mode":sessionSize+"-song session"));
+            primary(resume); resume.setOnClickListener(v -> { if(sessionEnded()) showStats(sessionId); else if(target!=null) renderRound(); else nextRound(); });
+            centered(content,score(wins,rounds),13,MUTED);
+        }
+        text(content,"New game",14,MUTED);
+        LinearLayout row=null;
+        for(int i=0;i<4;i++) {
+            if(i%2==0) { row=new LinearLayout(this); content.addView(row); }
+            int count=new int[]{5,10,15,20}[i];
+            Button mode=button(row,count+" songs"); LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(72),1); lp.setMargins(dp(4),dp(4),dp(4),dp(4)); mode.setLayoutParams(lp);
+            mode.setEnabled(tracks.size()>=count); mode.setAlpha(mode.isEnabled()?1:.35f);
+            mode.setOnClickListener(v -> startSession(count));
+        }
+        Button infinite=button(content,"∞   Infinite mode"); infinite.setEnabled(!tracks.isEmpty()); infinite.setOnClickListener(v -> startSession(0));
+        centered(content,tracks.size()+" songs available · Fixed sessions do not repeat songs",12,MUTED);
+        button(content,"History & statistics").setOnClickListener(v -> showStats(null));
+    }
+    private boolean sessionEnded() { return exhausted || (sessionSize>0 && rounds>=sessionSize); }
+    private void startSession(int size) {
+        if(tracks.isEmpty()) { toast("Refresh the music library first."); return; }
+        if(size>tracks.size()) { toast("Not enough songs for this session."); return; }
+        stopAudio();
+        try { sessionId=history.start(size); }
+        catch(Exception e) { toast("Could not start a session. Check available storage."); return; }
+        sessionSize=size; exhausted=false; rounds=0; wins=0; target=null; finished=false; solved=false; excluded.clear(); bag.clear();
+        nextRound();
+    }
+    private void saveGame() {
+        if(sessionId==null) return;
+        try {
+            JSONObject state=new JSONObject(); state.put("session",sessionId); state.put("size",sessionSize); state.put("target",target==null?-1:target.id); state.put("exhausted",exhausted);
+            state.put("round",roundId==null?"":roundId); state.put("attempt",attempt); state.put("finished",finished); state.put("solved",solved);
+            JSONArray deck=new JSONArray(); for(Track t:bag) deck.put(t.id); state.put("deck",deck);
+            JSONArray removed=new JSONArray(); for(long id:excluded) removed.put(id); state.put("excluded",removed);
+            getPreferences(0).edit().putString("game",state.toString()).apply();
+        } catch(JSONException e) { toast("Could not save the current game."); }
+    }
+    private void restoreGame() {
+        try {
+            String saved=getPreferences(0).getString("game",null); if(saved==null) return;
+            JSONObject state=new JSONObject(saved); sessionId=state.getString("session"); sessionSize=state.getInt("size"); exhausted=state.optBoolean("exhausted");
+            roundId=state.getString("round"); attempt=Math.max(0,Math.min(CLIPS.length-1,state.getInt("attempt")));
+            finished=state.getBoolean("finished"); solved=state.getBoolean("solved");
+            Boolean recorded=history.found(roundId); if(recorded!=null) { finished=true; solved=recorded; }
+            long id=state.getLong("target"); target=tracks.stream().filter(t -> t.id==id).findFirst().orElse(null);
+            Map<Long,Track> byId=new HashMap<>(); for(Track t:tracks) byId.put(t.id,t);
+            excluded.clear(); JSONArray removed=state.optJSONArray("excluded"); if(removed!=null) for(int i=0;i<removed.length();i++) excluded.add(removed.getLong(i));
+            bag.clear(); JSONArray deck=state.getJSONArray("deck"); for(int i=0;i<deck.length();i++) { Track t=byId.get(deck.getLong(i)); if(t!=null && !excluded.contains(t.id)) bag.add(t); }
+            if(target!=null && excluded.contains(target.id)) { target=null; finished=false; solved=false; }
+            GameHistory.Summary summary=history.summary(sessionId); rounds=summary.played(); wins=summary.found();
+        } catch(Exception e) { sessionId=null; target=null; bag.clear(); excluded.clear(); toast("Could not resume the game. Saved statistics are still available."); }
+    }
+    private void reportSong() {
+        if(target==null || sessionId==null) return;
+        stopAudio();
+        try { history.remove(roundId); }
+        catch(Exception e) { message.setText("Could not remove this result. Try again."); return; }
+        if(finished) { rounds--; if(solved) wins--; }
+        excluded.add(target.id); bag.removeIf(t -> t.id==target.id); finished=false; solved=false;
+        saveGame(); toast("Song replaced. It will not count in your statistics."); nextRound();
+    }
+    private void showStats(String id) {
+        beginPage("stats"); statsSession=id; int version=screenVersion;
+        centered(content,"Loading statistics…",16,MUTED);
+        io.execute(() -> {
+            try {
+                GameHistory.Summary summary=history.summary(id);
+                List<GameHistory.Session> sessions=id==null?history.sessions():List.of();
+                List<GameHistory.Result> results=id==null?List.of():history.results(id);
+                main.post(() -> { if(!isDestroyed() && screenVersion==version) renderStats(id,summary,sessions,results); });
+            } catch(Exception e) { main.post(() -> { if(screenVersion==version && !isDestroyed()) { content.removeAllViews(); text(content,"Could not load statistics.",18,Color.WHITE); button(content,"Back to game modes").setOnClickListener(v -> showHome()); } }); }
+        });
+    }
+    private void renderStats(String id,GameHistory.Summary summary,List<GameHistory.Session> sessions,List<GameHistory.Result> results) {
+        content.removeAllViews();
+        boolean complete=id!=null && id.equals(sessionId) && sessionEnded();
+        eyebrow(content,id==null?"ALL-TIME":complete?(exhausted?"SESSION ENDED":"SESSION COMPLETE"):"SESSION STATISTICS");
+        centered(content,summary.played()==0?"No results yet":Math.round(100f*summary.found()/summary.played())+"%",48,Color.WHITE);
+        centered(content,score(summary.found(),summary.played()),16,MUTED);
+        LinearLayout metrics=new LinearLayout(this); content.addView(metrics);
+        metric(metrics,summary.found()==0?"—":String.format(Locale.ROOT,"%.1f s",summary.meanMs()/1000),"Average clip to solve");
+        metric(metrics,String.valueOf(summary.played()-summary.found()),"Not found");
+        centered(content,"Average uses correct answers only and the clip length unlocked at the guess.",12,MUTED);
+        button(content,id!=null && id.equals(sessionId) && !complete?"Continue session":"Game modes").setOnClickListener(v -> { if(id!=null && id.equals(sessionId) && !complete) { if(target!=null) renderRound(); else nextRound(); } else showHome(); });
+        if(complete && sessionSize>0) button(content,"Play "+sessionSize+" songs again").setOnClickListener(v -> startSession(sessionSize));
+        if(summary.played()==0) text(content,"Finish a song to start your history. Unplayable songs never count.",15,MUTED);
+        else {
+            text(content,"Your strengths",22,Color.WHITE);
+            text(content,"Rankings need 3 plays per category. Missing tags are excluded from rankings.",12,MUTED);
+            groupSection("Genres",summary.genres());
+            groupSection("Five-year periods",summary.fiveYears());
+            groupSection("Decades",summary.decades());
+        }
+        if(id==null) {
+            text(content,"Recent sessions",22,Color.WHITE);
+            for(GameHistory.Session session:sessions) {
+                String date=java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM,java.text.DateFormat.SHORT).format(new Date(session.started()));
+                String title=session.size()==0?"Infinite mode":session.size()+" songs · "+session.played()+" / "+session.size()+" completed";
+                Button row=button(content,title+"\n"+score(session.found(),session.played())+"\n"+date);
+                row.setOnClickListener(v -> showStats(session.id()));
+            }
+        } else {
+            button(content,"All-time statistics").setOnClickListener(v -> showStats(null));
+            text(content,"Songs · newest first",22,Color.WHITE);
+            for(GameHistory.Result result:results) {
+                LinearLayout card=card(content);
+                text(card,result.title(),17,Color.WHITE); text(card,result.artist(),14,MUTED);
+                text(card,result.found()?"✓ Solved · "+duration(result.clipMs())+" s":"Not found",13,result.found()?Color.rgb(165,218,179):MUTED);
+            }
+            if(summary.played()>50) text(content,"Showing the latest 50 songs. Totals include every result.",12,MUTED);
+        }
+    }
+    private void metric(LinearLayout row,String value,String label) {
+        LinearLayout column=card(row); column.setLayoutParams(new LinearLayout.LayoutParams(0,-2,1));
+        centered(column,value,25,Color.WHITE); centered(column,label,12,MUTED);
+    }
+    private LinearLayout card(LinearLayout parent) {
+        LinearLayout card=new LinearLayout(this); card.setOrientation(LinearLayout.VERTICAL); card.setPadding(dp(14),dp(6),dp(14),dp(6)); card.setBackground(surface(Color.rgb(26,27,28),20));
+        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2); lp.setMargins(dp(3),dp(6),dp(3),dp(6)); parent.addView(card,lp); return card;
+    }
+    private void groupSection(String title,List<GameHistory.Group> groups) {
+        text(content,title,18,Color.WHITE);
+        ArrayList<GameHistory.Group> ranked=new ArrayList<>(); for(GameHistory.Group g:groups) if(!g.name().equals("Unknown") && g.played()>=3) ranked.add(g);
+        ranked.sort(Comparator.comparingDouble((GameHistory.Group g) -> (double)g.found()/g.played()).thenComparingInt(GameHistory.Group::played));
+        if(ranked.size()>=2) {
+            GameHistory.Group worst=ranked.get(0),best=ranked.get(ranked.size()-1);
+            if((long)best.found()*worst.played()==(long)worst.found()*best.played()) text(content,"Eligible categories are tied by success rate.",13,MUTED);
+            else text(content,"Best · "+best.name()+"    /    Hardest · "+worst.name(),13,Color.rgb(210,220,210));
+        } else text(content,"More results needed to compare categories.",12,MUTED);
+        for(GameHistory.Group group:groups) {
+            LinearLayout card=card(content);
+            text(card,group.name()+"  ·  "+score(group.found(),group.played()),14,Color.WHITE);
+            ProgressBar bar=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal); bar.setMax(group.played()); bar.setProgress(group.found());
+            bar.setProgressTintList(ColorStateList.valueOf(Color.rgb(165,218,179))); bar.setProgressBackgroundTintList(ColorStateList.valueOf(Color.rgb(60,60,60)));
+            card.addView(bar,new LinearLayout.LayoutParams(-1,dp(5)));
+            text(card,group.found()==0?"No correct answers yet":String.format(Locale.ROOT,"%.1f s average to solve",group.meanMs()/1000),12,MUTED);
+        }
+    }
+    private PlaybackButton playbackButton(LinearLayout parent,String label) {
+        PlaybackButton b=new PlaybackButton(this); b.setText(label); b.setAllCaps(false); b.setTextColor(Color.rgb(224,222,218)); b.setTextSize(16); b.setGravity(Gravity.CENTER);
+        b.setPadding(dp(16),dp(14),dp(16),dp(14)); b.setMinHeight(dp(56));
+        b.setBackground(new RippleDrawable(ColorStateList.valueOf(0x22ffffff),surface(Color.rgb(34,34,34),28),null));
+        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2); lp.setMargins(0,dp(10),0,dp(4)); parent.addView(b,lp); return b;
     }
 
     private void checkUpdate(Button button) {
@@ -404,10 +609,7 @@ public final class MainActivity extends Activity {
         b.setPadding(dp(16),dp(14),dp(16),dp(14)); b.setMinHeight(dp(52));
         LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2); lp.topMargin=dp(10); lp.bottomMargin=dp(4); parent.addView(b,lp); return b;
     }
-    @Override protected void onSaveInstanceState(Bundle out) {
-        super.onSaveInstanceState(out); if(target!=null) out.putLong("target",target.id);
-        out.putInt("attempt",attempt); out.putBoolean("finished",finished); out.putBoolean("solved",solved); out.putInt("rounds",rounds); out.putInt("wins",wins);
-    }
-    @Override protected void onStop() { stopAudio(); super.onStop(); }
-    @Override protected void onDestroy() { unregisterReceiver(noisy); io.shutdownNow(); super.onDestroy(); }
+    @Override protected void onSaveInstanceState(Bundle out) { super.onSaveInstanceState(out); out.putString("screen",screen); out.putString("statsSession",statsSession); saveGame(); }
+    @Override protected void onStop() { stopAudio(); saveGame(); super.onStop(); }
+    @Override protected void onDestroy() { unregisterReceiver(noisy); io.execute(history::close); io.shutdown(); super.onDestroy(); }
 }
