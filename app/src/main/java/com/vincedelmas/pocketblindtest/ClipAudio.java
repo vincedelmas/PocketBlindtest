@@ -77,7 +77,7 @@ final class ClipAudio implements AutoCloseable {
                     if(index>=0) {
                         ByteBuffer buffer=codec.getInputBuffer(index);
                         int size=extractor.readSampleData(buffer,0);
-                        if(size<0 || extractor.getSampleTime()>20000000) {
+                        if(size<0 || extractor.getSampleTime()>(milliseconds+11000L)*1000) {
                             codec.queueInputBuffer(index,0,0,0,MediaCodec.BUFFER_FLAG_END_OF_STREAM); inputDone=true;
                         } else {
                             codec.queueInputBuffer(index,0,size,extractor.getSampleTime(),0); extractor.advance();
@@ -94,7 +94,7 @@ final class ClipAudio implements AutoCloseable {
                 } else if(index>=0) {
                     ByteBuffer buffer=codec.getOutputBuffer(index).order(ByteOrder.LITTLE_ENDIAN);
                     buffer.position(info.offset); buffer.limit(info.offset+info.size);
-                    int frameBytes=channels*2, wanted=rate*milliseconds/1000*frameBytes;
+                    int frameBytes=channels*2, wanted=(int)((long)rate*milliseconds/1000)*frameBytes;
                     byte[] frame=new byte[frameBytes];
                     while(buffer.remaining()>=frameBytes && samples.size()<wanted) {
                         boolean signal=false;
@@ -114,7 +114,7 @@ final class ClipAudio implements AutoCloseable {
                 }
             }
             if(cancelled || samples.size()==0) throw new IllegalStateException("No decoded audio");
-            if(!outputDone && samples.size()<rate*milliseconds/1000*channels*2)
+            if(!outputDone && samples.size()<(long)rate*milliseconds/1000*channels*2)
                 throw new IllegalStateException("Audio decoding timed out");
             // A silent tail lets the output pipeline drain; it never adds song content.
             byte[] bytes=Arrays.copyOf(samples.toByteArray(),samples.size()+rate/2*channels*2);

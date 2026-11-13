@@ -6,7 +6,9 @@ A simple music guessing game for Android 16. Play with songs stored on your phon
 
 1. Allow access to your music library.
 2. Listen to the intro and search for your answer by title or artist.
-3. Guess the song in four attempts: **0.15 → 0.5 → 2 → 5 seconds**.
+3. Guess the song in six attempts: **1 → 2 → 4 → 7 → 11 → 16 seconds**.
+
+Songs must be at least 16 seconds long.
 
 A wrong guess or skip unlocks a longer clip. Replay as often as you like. Songs are shuffled without repeating until you've played through your library.
 
