@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/vincedelmas/PocketBlindtest/compare/v0.7.0...v0.8.0) (2026-11-13)
+
+
+### Features
+
+* refine grouped menus and history card styling ([9e12e48](https://github.com/vincedelmas/PocketBlindtest/commit/9e12e486f27357c702ef32c52bf5b7e7cd69a521))
+
 ## [0.7.0](https://github.com/vincedelmas/PocketBlindtest/compare/v0.6.0...v0.7.0) (2026-11-13)
 
 
