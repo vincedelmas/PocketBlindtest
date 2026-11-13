@@ -10,7 +10,7 @@ A simple music guessing game for Android 16. Play with songs stored on your phon
 
 A wrong guess or skip unlocks a longer clip. Replay as often as you like. Songs are shuffled without repeating until you've played through your library.
 
-Clips start at the beginning of each song, including any silence. The shortest clip is approximate, especially over Bluetooth.
+Clips skip up to ten seconds of leading silence. Each attempt starts at the same point, with its length measured in decoded audio samples. Bluetooth can delay when playback reaches your headphones.
 
 ## Install
 

@@ -1,5 +1,5 @@
 <resources><style name="AppTheme" parent="android:style/Theme.Material.NoActionBar">
-<item name="android:fontFamily">sans</item><item name="android:colorAccent">#FF624F</item>
+<item name="android:fontFamily">sans</item><item name="android:colorAccent">#ED4235</item>
 <item name="android:windowLightStatusBar">false</item><item name="android:windowLightNavigationBar">false</item>
-<item name="android:windowBackground">#111214</item><item name="android:colorEdgeEffect">#FF624F</item>
+<item name="android:windowBackground">#0E0E0E</item><item name="android:colorEdgeEffect">#ED4235</item>
 </style></resources>

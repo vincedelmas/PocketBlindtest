@@ -8,6 +8,8 @@ import android.database.Cursor;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.RippleDrawable;
+import android.content.res.ColorStateList;
 import android.media.*;
 import android.net.Uri;
 import android.os.*;
@@ -27,25 +29,24 @@ import java.util.concurrent.*;
 public final class MainActivity extends Activity {
     private static final int[] CLIPS = {150, 500, 2000, 5000};
     private static final String REPO = "https://api.github.com/repos/vincedelmas/PocketBlindtest";
-    private static final int BG = Color.rgb(17,18,20), MUTED = Color.rgb(163,166,173), ACCENT = Color.rgb(255,98,79);
+    private static final int BG = Color.rgb(14,14,14), MUTED = Color.rgb(160,160,157), ACCENT = Color.rgb(237,66,53);
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private final ArrayList<Track> tracks = new ArrayList<>();
     private final ArrayList<Track> bag = new ArrayList<>();
     private final Random random = new Random();
-    private LinearLayout root, content, choices;
+    private LinearLayout root, content, choices, stages;
     private TextView status, counter, message;
     private Button play, skip;
     private EditText search;
     private Track target;
     private int attempt, rounds, wins;
     private boolean finished, loading, playing;
-    private MediaPlayer player;
+    private ClipAudio player;
     private AudioFocusRequest focus;
     private AudioManager audio;
     private Bundle restored;
     private long downloadId = -1;
-    private final Runnable endClip = this::stopAudio;
     private final BroadcastReceiver noisy = new BroadcastReceiver() {
         @Override public void onReceive(Context c, Intent i) { stopAudio(); }
     };
@@ -74,22 +75,29 @@ public final class MainActivity extends Activity {
             var bars = insets.getInsets(WindowInsets.Type.systemBars() | WindowInsets.Type.ime());
             root.setPadding(dp(24)+bars.left,dp(20)+bars.top,dp(24)+bars.right,dp(24)+bars.bottom); return insets;
         });
-        text(root,"POCKET / BLINDTEST",13,ACCENT).setLetterSpacing(.18f);
-        TextView title = text(root,"Know your music?",32,Color.WHITE); title.setTypeface(null,Typeface.BOLD);
-        text(root,"Your library. Four chances. No hints.",15,MUTED);
+        LinearLayout header = new LinearLayout(this); header.setGravity(Gravity.CENTER_VERTICAL); root.addView(header);
+        TextView brand = text(header,"POCKET",12,MUTED); brand.setLetterSpacing(.22f);
+        brand.setLayoutParams(new LinearLayout.LayoutParams(0,-2,1));
+        Button settings = button(header,"•••"); settings.setContentDescription("Library and app settings");
+        settings.setLayoutParams(new LinearLayout.LayoutParams(dp(56),dp(48)));
+        settings.setOnClickListener(v -> {
+            PopupMenu menu = new PopupMenu(this,settings);
+            menu.getMenu().add("Refresh music library").setOnMenuItemClickListener(item -> { loadLibrary(); return true; });
+            menu.getMenu().add("Check for updates").setOnMenuItemClickListener(item -> { checkUpdate(settings); return true; });
+            menu.getMenu().add("Version "+BuildConfig.VERSION_NAME).setEnabled(false);
+            menu.show();
+        });
+        TextView title = text(root,"Blindtest",38,Color.WHITE); title.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));
         content = new LinearLayout(this); content.setOrientation(LinearLayout.VERTICAL); root.addView(content);
-        Button library = button(root,"Refresh music library"); library.setOnClickListener(v -> loadLibrary());
-        Button update = button(root,"Check for updates"); update.setOnClickListener(v -> checkUpdate(update));
-        text(root,"v"+BuildConfig.VERSION_NAME+" · Offline play · No analytics",12,MUTED);
         if (checkSelfPermission(Manifest.permission.READ_MEDIA_AUDIO) == PackageManager.PERMISSION_GRANTED) loadLibrary();
         else permissionScreen();
     }
 
     private void permissionScreen() {
         content.removeAllViews();
-        text(content,"Let’s find your songs",24,Color.WHITE);
-        text(content,"Allow audio access to use music stored on this phone. Nothing is uploaded.",16,MUTED);
-        button(content,"Choose audio permission").setOnClickListener(v -> {
+        text(content,"Music access",24,Color.WHITE);
+        text(content,"Allow access to the songs stored on this phone.",16,MUTED);
+        button(content,"Allow music access").setOnClickListener(v -> {
             if (getPreferences(0).getBoolean("asked",false) && !shouldShowRequestPermissionRationale(Manifest.permission.READ_MEDIA_AUDIO)) {
                 startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:"+getPackageName())));
             } else {
@@ -141,19 +149,30 @@ public final class MainActivity extends Activity {
     }
     private void renderRound() {
         content.removeAllViews();
-        counter=text(content,tracks.size()+" local tracks · "+wins+" / "+rounds+" solved",13,MUTED);
-        text(content,"150 ms  /  500 ms  /  2 s  /  5 s",18,ACCENT);
-        status=text(content,"",25,Color.WHITE);
-        play=button(content,"Play excerpt"); play.setOnClickListener(v -> playClip());
-        message=text(content,"Listen, then search for the title or artist.",15,MUTED);
-        search=new EditText(this); search.setSingleLine(true); search.setTextColor(Color.WHITE); search.setTextSize(17); search.setHintTextColor(MUTED); search.setHint("Search your library…"); content.addView(search);
+        counter=text(content,tracks.size()+" songs   ·   "+wins+" / "+rounds+" solved",13,MUTED);
+        LinearLayout panel = new LinearLayout(this); panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(20),dp(12),dp(20),dp(20)); panel.setBackground(surface(Color.rgb(26,26,26),28));
+        LinearLayout.LayoutParams panelParams = new LinearLayout.LayoutParams(-1,-2); panelParams.topMargin=dp(20); panelParams.bottomMargin=dp(24); content.addView(panel,panelParams);
+        text(panel,"EXCERPT",11,MUTED).setLetterSpacing(.2f);
+        status=text(panel,"",28,Color.WHITE); status.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));
+        stages=new LinearLayout(this); panel.addView(stages);
+        for(int i=0;i<CLIPS.length;i++) {
+            TextView stage=text(stages,duration(CLIPS[i])+" s",13,MUTED); stage.setPadding(0,0,0,0); stage.setGravity(Gravity.CENTER); stage.setTypeface(Typeface.MONOSPACE);
+            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(44),1); lp.setMargins(dp(2),dp(8),dp(2),dp(16)); stage.setLayoutParams(lp);
+        }
+        play=button(panel,"Play"); primary(play); play.setOnClickListener(v -> playClip());
+        message=text(content,"Search by title or artist",14,MUTED);
+        search=new EditText(this); search.setSingleLine(true); search.setTextColor(Color.WHITE); search.setTextSize(16); search.setHintTextColor(MUTED); search.setHint("Search songs");
+        search.setPadding(dp(18),dp(16),dp(18),dp(16)); search.setBackground(surface(Color.rgb(30,30,30),18));
+        search.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        content.addView(search,new LinearLayout.LayoutParams(-1,dp(58)));
         choices=new LinearLayout(this); choices.setOrientation(LinearLayout.VERTICAL); content.addView(choices);
         search.addTextChangedListener(new TextWatcher() {
             public void beforeTextChanged(CharSequence s,int start,int count,int after) {}
             public void onTextChanged(CharSequence s,int start,int before,int count) { showMatches(s.toString()); }
             public void afterTextChanged(Editable s) {}
         });
-        skip=button(content,"Skip this attempt"); skip.setOnClickListener(v -> miss("Skipped."));
+        skip=button(content,"Skip"); skip.setOnClickListener(v -> miss("Skipped."));
         if(finished) reveal(); else updateAttempt();
     }
     private static String normalize(String s) {
@@ -173,24 +192,30 @@ public final class MainActivity extends Activity {
         if(finished) return;
         // Treat duplicate files with identical title and artist as the same answer.
         if(choice.id==target.id || normalize(choice.label()).equals(normalize(target.label()))) {
-            wins++; finishRound("You got it! Solved on attempt "+(attempt+1)+".");
-        } else miss("Not that one. Try a longer excerpt.");
+            wins++; finishRound("Correct · Attempt "+(attempt+1)+".");
+        } else miss("Incorrect. A longer clip is available.");
     }
     private void miss(String feedback) {
         if(finished) return; stopAudio();
-        if(attempt==3) finishRound("Out of guesses. Here’s the answer.");
+        if(attempt==3) finishRound("Answer revealed.");
         else { attempt++; search.setText(""); message.setText(feedback); updateAttempt(); }
     }
     private void updateAttempt() {
-        status.setText("Attempt "+(attempt+1)+" of 4"); play.setText("▶  Play "+clipLabel());
+        status.setText("Attempt "+(attempt+1)+" / 4"); play.setText("▶   Play "+clipLabel());
+        for(int i=0;i<stages.getChildCount();i++) {
+            TextView stage=(TextView)stages.getChildAt(i);
+            stage.setTextColor(i==attempt?Color.WHITE:MUTED);
+            stage.setBackground(surface(i==attempt?ACCENT:Color.rgb(40,40,40),12));
+        }
     }
-    private String clipLabel() { return attempt==0?"0.15 seconds":attempt==1?"0.5 seconds":attempt==2?"2 seconds":"5 seconds"; }
-    private void finishRound(String feedback) { stopAudio(); finished=true; rounds++; reveal(); message.setText(feedback); }
+    private static String duration(int ms) { return java.math.BigDecimal.valueOf(ms,3).stripTrailingZeros().toPlainString(); }
+    private String clipLabel() { return duration(CLIPS[attempt])+" s"; }
+    private void finishRound(String feedback) { stopAudio(); finished=true; rounds++; reveal(); message.setText(target.artist+"\n"+feedback); }
     private void reveal() {
         status.setText(target.title); message.setText(target.artist);
-        counter.setText(tracks.size()+" local tracks · "+wins+" / "+rounds+" solved");
+        counter.setText(tracks.size()+" songs   ·   "+wins+" / "+rounds+" solved");
         search.setVisibility(View.GONE); choices.removeAllViews(); skip.setVisibility(View.GONE);
-        play.setText("▶  Replay 5-second reveal"); button(content,"Next song →").setOnClickListener(v -> nextRound());
+        play.setText("▶   Replay 5 s"); button(content,"Next song").setOnClickListener(v -> nextRound());
     }
     private void playClip() {
         if(playing || target==null) return;
@@ -199,24 +224,18 @@ public final class MainActivity extends Activity {
         focus=new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT).setAudioAttributes(attributes)
             .setOnAudioFocusChangeListener(change -> { if(change<0) stopAudio(); },main).build();
         if(audio.requestAudioFocus(focus)!=AudioManager.AUDIOFOCUS_REQUEST_GRANTED) { message.setText("Audio is busy. Try again."); return; }
-        playing=true; play.setEnabled(false);
-        MediaPlayer current=new MediaPlayer(); player=current;
-        current.setAudioAttributes(attributes);
-        current.setOnPreparedListener(p -> {
-            if(player!=p) return;
-            p.start();
-            main.postDelayed(endClip, finished?5000:CLIPS[attempt]);
-        });
-        current.setOnCompletionListener(p -> stopAudio());
-        current.setOnErrorListener((p,what,extra)-> { stopAudio(); message.setText("This file cannot be played. Skip it or try another song."); return true; });
-        try { current.setDataSource(this,target.uri()); current.prepareAsync(); }
-        catch(Exception e) { stopAudio(); message.setText("Song unavailable. Refresh your library or skip this song."); }
+        playing=true; play.setEnabled(false); play.setText("Preparing…");
+        ClipAudio current=new ClipAudio(this,main); player=current;
+        current.play(target.uri(),finished?5000:CLIPS[attempt],attributes,
+            () -> { if(player==current) play.setText("Playing…"); },
+            () -> { if(player==current) stopAudio(); },
+            () -> { if(player==current) { stopAudio(); message.setText("Cannot play this song. Skip or refresh the library."); } });
     }
     private void stopAudio() {
-        main.removeCallbacks(endClip);
-        if(player!=null) { player.release(); player=null; }
+        if(player!=null) { player.close(); player=null; }
         if(focus!=null) { audio.abandonAudioFocusRequest(focus); focus=null; }
-        playing=false; if(play!=null) play.setEnabled(true);
+        playing=false;
+        if(play!=null) { play.setEnabled(true); play.setText(finished?"▶   Replay 5 s":"▶   Play "+clipLabel()); }
     }
 
     private void checkUpdate(Button button) {
@@ -231,7 +250,7 @@ public final class MainActivity extends Activity {
             }
             downloadId=-1; getPreferences(0).edit().remove("download").apply();
         }
-        button.setEnabled(false); button.setText("Checking GitHub…");
+        button.setEnabled(false);
         io.execute(() -> {
             String outcome; JSONObject release=null;
             HttpURLConnection connection=null;
@@ -240,7 +259,7 @@ public final class MainActivity extends Activity {
                 connection.setConnectTimeout(10000); connection.setReadTimeout(10000);
                 connection.setRequestProperty("Accept","application/vnd.github+json"); connection.setRequestProperty("User-Agent","PocketBlindtest/"+BuildConfig.VERSION_NAME);
                 int code=connection.getResponseCode();
-                if(code==404) outcome="No public release available yet. During the private preview, download APKs from GitHub while signed in.";
+                if(code==404) outcome="No release available yet.";
                 else if(code!=200) outcome="GitHub is unavailable (HTTP "+code+"). Try again later.";
                 else {
                     try(var stream=connection.getInputStream()) {
@@ -254,7 +273,7 @@ public final class MainActivity extends Activity {
             JSONObject result=release; String info=outcome;
             main.post(() -> {
                 if(isDestroyed()) return;
-                button.setEnabled(true); button.setText("Check for updates");
+                button.setEnabled(true); button.setText("•••");
                 try {
                     if(result!=null && newer(result.getString("tag_name"),BuildConfig.VERSION_NAME)) {
                         JSONArray assets=result.getJSONArray("assets");
@@ -264,7 +283,7 @@ public final class MainActivity extends Activity {
                                 String url=asset.getString("browser_download_url");
                                 if(!url.startsWith("https://github.com/vincedelmas/PocketBlindtest/releases/download/")) throw new IllegalArgumentException();
                                 new AlertDialog.Builder(this).setTitle("Update available: "+result.getString("tag_name"))
-                                    .setMessage("Download the signed APK from GitHub? Android will ask before installing. Your game stays offline.")
+                                    .setMessage("Download the signed APK from GitHub? Android will ask before installing.")
                                     .setNegativeButton("Later",null).setPositiveButton("Download",(d,w)->download(url)).show(); return;
                             }
                         }
@@ -306,9 +325,17 @@ public final class MainActivity extends Activity {
     private TextView text(LinearLayout parent,String value,int size,int color) {
         TextView t=new TextView(this); t.setText(value); t.setTextSize(size); t.setTextColor(color); t.setPadding(0,dp(12),0,dp(12)); parent.addView(t); return t;
     }
+    private GradientDrawable surface(int color,int radius) {
+        GradientDrawable bg=new GradientDrawable(); bg.setColor(color); bg.setCornerRadius(dp(radius)); return bg;
+    }
+    private void primary(Button b) {
+        b.setBackground(new RippleDrawable(ColorStateList.valueOf(0x33ffffff),surface(ACCENT,28),null));
+        b.setTextColor(Color.WHITE); b.setTextSize(18); b.setMinHeight(dp(64));
+    }
     private Button button(LinearLayout parent,String label) {
-        Button b=new Button(this); b.setText(label); b.setAllCaps(false); b.setTextColor(Color.WHITE); b.setTextSize(16); b.setGravity(Gravity.CENTER);
-        GradientDrawable bg=new GradientDrawable(); bg.setColor(Color.rgb(38,40,44)); bg.setCornerRadius(dp(14)); b.setBackground(bg); b.setPadding(dp(14),dp(14),dp(14),dp(14));
+        Button b=new Button(this); b.setText(label); b.setAllCaps(false); b.setTextColor(Color.WHITE); b.setTextSize(15); b.setGravity(Gravity.CENTER);
+        b.setBackground(new RippleDrawable(ColorStateList.valueOf(0x22ffffff),surface(Color.rgb(34,34,34),18),null));
+        b.setPadding(dp(16),dp(14),dp(16),dp(14)); b.setMinHeight(dp(52));
         LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2); lp.topMargin=dp(10); lp.bottomMargin=dp(4); parent.addView(b,lp); return b;
     }
     @Override protected void onSaveInstanceState(Bundle out) {
