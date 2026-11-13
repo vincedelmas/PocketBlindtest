@@ -2,10 +2,10 @@ package com.vincedelmas.pocketblindtest;
 
 import android.content.Context;
 import android.graphics.*;
-import android.widget.Button;
+import com.google.android.material.button.MaterialButton;
 
 /** A clipped background fill, behind the label, driven by the actual audio frame position. */
-final class PlaybackButton extends Button {
+final class PlaybackButton extends MaterialButton {
     private final Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);
     private float progress;
     PlaybackButton(Context context) { super(context); }

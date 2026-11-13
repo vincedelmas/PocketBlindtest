@@ -28,6 +28,11 @@ final class GameHistory extends SQLiteOpenHelper {
         v.put("genre",genre); v.put("year",year); v.put("found",found?1:0); v.put("clip_ms",clipMs); v.put("attempts",attempts); v.put("ended",System.currentTimeMillis());
         getWritableDatabase().insertWithOnConflict("results",null,v,SQLiteDatabase.CONFLICT_IGNORE);
     }
+    void reset() {
+        SQLiteDatabase db=getWritableDatabase(); db.beginTransaction();
+        try { db.execSQL("DELETE FROM results"); db.execSQL("DELETE FROM sessions"); db.setTransactionSuccessful(); }
+        finally { db.endTransaction(); }
+    }
     void remove(String round) { getWritableDatabase().delete("results","id=?",new String[]{round}); }
     Boolean found(String round) {
         try(Cursor c=getReadableDatabase().rawQuery("SELECT found FROM results WHERE id=?",new String[]{round})) { return c.moveToFirst()?c.getInt(0)==1:null; }

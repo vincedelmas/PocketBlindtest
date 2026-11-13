@@ -27,3 +27,8 @@ android {
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
     buildFeatures { buildConfig true }
 }
+
+dependencies {
+    implementation 'com.google.android.material:material:1.13.0'
+    implementation 'androidx.recyclerview:recyclerview:1.4.0'
+}

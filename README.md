@@ -21,7 +21,9 @@ Fixed sessions use distinct songs and finish with a summary. Infinite mode conti
 
 Session and all-time statistics show your score, percentage, average clip length at a correct guess, and breakdowns by genre, five-year period and decade. Best and hardest categories need at least three results each. Missing music tags appear as **Unknown** and are excluded from rankings.
 
-**No sound? Replace song** excludes the song for the rest of the session and replaces it without counting an attempt, a completed song or a result. This also works on the reveal screen and removes that round from saved statistics.
+In the three-dot menu, **Replace unplayable song** asks for confirmation, then excludes the song for the rest of the session and replaces it without counting an attempt, a completed song or a result. This also works on the reveal screen and removes that round from saved statistics.
+
+History uses a private SQLite database; the active game uses SharedPreferences. **Reset statistics…** in the three-dot menu deletes history and ends the active game after confirmation. It keeps your music files.
 
 History stays on this phone across app updates. It starts with this version; older rounds cannot be recovered. Uninstalling the app clears it. Starting a new session keeps previous results in history.
 
@@ -35,7 +37,7 @@ Built for a Nothing Phone (3a) running Android 16. Other devices have not been t
 
 ## Development
 
-Native Java with Android's built-in UI and audio APIs. No third-party app dependencies.
+Java with Material 3 controls, RecyclerView song lists and Android audio APIs. Search filters off the UI thread and creates only visible song rows, so all matching tracks can be browsed.
 
 Builds run only in GitHub Actions after merging a Release Please version pull request. The release job builds and lints the signed APK, then uploads it to the GitHub release.
 

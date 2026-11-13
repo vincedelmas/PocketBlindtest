@@ -1,5 +1,24 @@
-<resources><style name="AppTheme" parent="android:style/Theme.Material.NoActionBar">
-<item name="android:fontFamily">sans</item><item name="android:colorAccent">#ED4235</item>
-<item name="android:windowLightStatusBar">false</item><item name="android:windowLightNavigationBar">false</item>
-<item name="android:windowBackground">#0E0E0E</item><item name="android:colorEdgeEffect">#ED4235</item>
-</style></resources>
+<resources>
+    <style name="AppTheme" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="colorPrimary">#E8D8BD</item>
+        <item name="colorOnPrimary">#251E14</item>
+        <item name="colorSecondary">#A5DAB3</item>
+        <item name="colorOnSecondary">#102C1B</item>
+        <item name="colorSecondaryContainer">#30352E</item>
+        <item name="colorOnSecondaryContainer">#E0E9DB</item>
+        <item name="colorOutline">#77756F</item>
+        <item name="colorSurface">#18191B</item>
+        <item name="colorOnSurface">#F0EBE1</item>
+        <item name="colorOnSurfaceVariant">#C8C5BE</item>
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:windowBackground">#0E0E0E</item>
+        <item name="materialButtonStyle">@style/AppButton</item>
+        <item name="textInputStyle">@style/Widget.Material3.TextInputLayout.OutlinedBox</item>
+    </style>
+    <style name="AppButton" parent="Widget.Material3.Button.TonalButton">
+        <item name="cornerRadius">24dp</item>
+        <item name="android:minHeight">56dp</item>
+    </style>
+</resources>

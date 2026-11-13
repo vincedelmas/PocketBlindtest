@@ -21,6 +21,16 @@ import android.provider.Settings;
 import android.text.*;
 import android.view.*;
 import android.widget.*;
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.recyclerview.widget.RecyclerView;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import com.google.android.material.appbar.MaterialToolbar;
+import com.google.android.material.button.MaterialButton;
+import com.google.android.material.card.MaterialCardView;
+import com.google.android.material.progressindicator.LinearProgressIndicator;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
+import com.google.android.material.textfield.TextInputLayout;
+import com.google.android.material.textfield.TextInputEditText;
 import org.json.*;
 import java.net.*;
 import java.nio.charset.StandardCharsets;
@@ -29,7 +39,7 @@ import java.util.*;
 import java.util.concurrent.*;
 
 /** Local music never leaves the device. Networking is exclusively user-triggered updates. */
-public final class MainActivity extends Activity {
+public final class MainActivity extends AppCompatActivity {
     private static final int[] CLIPS = {1000, 2000, 4000, 7000, 11000, 16000};
     private static final String REPO = "https://api.github.com/repos/vincedelmas/PocketBlindtest";
     private static final int BG = Color.rgb(14,14,14), MUTED = Color.rgb(160,160,157), ACCENT = Color.rgb(237,66,53);
@@ -38,10 +48,17 @@ public final class MainActivity extends Activity {
     private final ArrayList<Track> tracks = new ArrayList<>();
     private final ArrayList<Track> bag = new ArrayList<>();
     private final Random random = new Random();
-    private LinearLayout root, content, choices, stages;
+    private LinearLayout root, content, stages;
+    private RecyclerView choices;
+    private SongChoices songChoices;
+    private TextView matchCount;
+    private MaterialToolbar toolbar;
+    private final ExecutorService searchWorker=Executors.newSingleThreadExecutor();
+    private Future<?> searchTask;
+    private int searchVersion;
+    private Runnable searchDebounce;
     private TextView status, counter, message;
     private Button play, skip;
-    private Track selected;
     private GameHistory history;
     private String sessionId, roundId, screen="home";
     private int sessionSize, screenVersion;
@@ -66,7 +83,7 @@ public final class MainActivity extends Activity {
         @Override public void onReceive(Context c, Intent i) { stopAudio(); }
     };
 
-    private record Track(long id, String title, String artist, String genre, int year) {
+    record Track(long id, String title, String artist, String genre, int year) {
         String label() { return title + " — " + artist; }
         Uri uri() { return ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id); }
     }
@@ -91,22 +108,30 @@ public final class MainActivity extends Activity {
             var bars = insets.getInsets(WindowInsets.Type.systemBars() | WindowInsets.Type.ime());
             root.setPadding(dp(24)+bars.left,dp(20)+bars.top,dp(24)+bars.right,dp(24)+bars.bottom); return insets;
         });
-        LinearLayout header = new LinearLayout(this); header.setGravity(Gravity.CENTER_VERTICAL); root.addView(header);
-        TextView brand = text(header,"POCKET",12,MUTED); brand.setLetterSpacing(.22f);
-        brand.setLayoutParams(new LinearLayout.LayoutParams(0,-2,1));
-        Button settings = button(header,"•••"); settings.setContentDescription("Library and app settings");
-        settings.setLayoutParams(new LinearLayout.LayoutParams(dp(56),dp(48)));
-        settings.setOnClickListener(v -> {
-            PopupMenu menu = new PopupMenu(this,settings);
-            menu.getMenu().add("Game modes").setOnMenuItemClickListener(item -> { showHome(); return true; });
-            menu.getMenu().add("History & statistics").setOnMenuItemClickListener(item -> { showStats(null); return true; });
-            menu.getMenu().add("Session summary").setOnMenuItemClickListener(item -> { if(sessionId!=null) showStats(sessionId); else showStats(null); return true; });
-            menu.getMenu().add("Refresh music library").setOnMenuItemClickListener(item -> { loadLibrary(); return true; });
-            menu.getMenu().add("Check for updates").setOnMenuItemClickListener(item -> { checkUpdate(settings); return true; });
-            menu.getMenu().add("Version "+BuildConfig.VERSION_NAME).setEnabled(false);
-            menu.show();
+        toolbar=new MaterialToolbar(this); toolbar.setTitle("Pocket Blindtest");
+        toolbar.setTitleTextColor(Color.rgb(240,235,225)); toolbar.setOverflowIcon(getDrawable(R.drawable.ic_more_vert));
+        toolbar.getMenu().add(0,1,0,"Game modes");
+        toolbar.getMenu().add(0,2,1,"History & statistics");
+        toolbar.getMenu().add(0,3,2,"Session summary");
+        toolbar.getMenu().add(0,4,3,"Replace unplayable song").setVisible(false);
+        toolbar.getMenu().add(0,5,4,"Refresh music library");
+        toolbar.getMenu().add(0,6,5,"Check for updates");
+        toolbar.getMenu().add(0,7,6,"Reset statistics…");
+        toolbar.getMenu().add("Version "+BuildConfig.VERSION_NAME).setEnabled(false);
+        toolbar.setOnMenuItemClickListener(item -> {
+            switch(item.getItemId()) {
+                case 1 -> showHome();
+                case 2 -> showStats(null);
+                case 3 -> showStats(sessionId);
+                case 4 -> confirmReplacement();
+                case 5 -> loadLibrary();
+                case 6 -> checkUpdate();
+                case 7 -> confirmReset();
+                default -> { return false; }
+            }
+            return true;
         });
-        TextView title = text(root,"Blindtest",30,Color.WHITE); title.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));
+        root.addView(toolbar,new LinearLayout.LayoutParams(-1,dp(64)));
         content = new LinearLayout(this); content.setOrientation(LinearLayout.VERTICAL); root.addView(content);
         if (checkSelfPermission(Manifest.permission.READ_MEDIA_AUDIO) == PackageManager.PERMISSION_GRANTED) loadLibrary();
         else permissionScreen();
@@ -169,7 +194,7 @@ public final class MainActivity extends Activity {
         target=bag.remove(bag.size()-1); roundId=UUID.randomUUID().toString(); attempt=0; finished=false; solved=false; saveGame(); renderRound();
     }
     private void renderRound() {
-        screen="round"; screenVersion++;
+        cancelSearch(); screen="round"; screenVersion++; toolbar.getMenu().findItem(4).setVisible(target!=null);
         if(finished) { reveal(); return; }
         content.animate().cancel(); content.setAlpha(1f); content.setTranslationY(0);
         content.removeAllViews();
@@ -187,48 +212,55 @@ public final class MainActivity extends Activity {
         }
         play=playbackButton(content,"Play"); primary(play); play.setOnClickListener(v -> playClip());
         message=centered(content,"Attempt 1 of "+CLIPS.length,13,MUTED);
-        search=new EditText(this); search.setSingleLine(true); search.setTextColor(Color.WHITE); search.setTextSize(16); search.setHintTextColor(MUTED); search.setHint("Search title or artist");
-        search.setPadding(dp(20),dp(16),dp(20),dp(16)); search.setBackground(surface(Color.rgb(28,29,30),20));
+        TextInputLayout searchBox=new TextInputLayout(this); searchBox.setHint("Search title or artist");
+        searchBox.setBoxBackgroundMode(TextInputLayout.BOX_BACKGROUND_OUTLINE);
+        searchBox.setEndIconMode(TextInputLayout.END_ICON_CLEAR_TEXT);
+        search=new TextInputEditText(searchBox.getContext()); search.setSingleLine(true); search.setTextSize(16);
         search.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
         search.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_DONE);
-        content.addView(search,new LinearLayout.LayoutParams(-1,dp(58)));
-        choices=new LinearLayout(this); choices.setOrientation(LinearLayout.VERTICAL); content.addView(choices);
+        searchBox.addView(search,new LinearLayout.LayoutParams(-1,-2)); content.addView(searchBox,new LinearLayout.LayoutParams(-1,-2));
+        matchCount=text(content,"Search your library",12,MUTED);
+        choices=new RecyclerView(this); choices.setLayoutManager(new LinearLayoutManager(this));
+        choices.setItemAnimator(null); songChoices=new SongChoices(this::guess); choices.setAdapter(songChoices);
+        choices.setNestedScrollingEnabled(true);
+        // Keep the viewport bounded inside the outer page: never measure every matching row.
+        content.addView(choices,new LinearLayout.LayoutParams(-1,dp(360))); choices.setVisibility(View.GONE);
         search.addTextChangedListener(new TextWatcher() {
-            public void beforeTextChanged(CharSequence s,int start,int count,int after) {}
-            public void onTextChanged(CharSequence s,int start,int before,int count) { selected=null; showMatches(s.toString()); }
-            public void afterTextChanged(Editable s) {}
+            public void beforeTextChanged(CharSequence value,int start,int count,int after) {}
+            public void onTextChanged(CharSequence value,int start,int before,int count) { showMatches(value.toString()); }
+            public void afterTextChanged(Editable value) {}
         });
         skip=button(content,"Skip attempt"); skip.setOnClickListener(v -> miss("Skipped."));
-        button(content,"No sound? Replace song").setOnClickListener(v -> reportSong());
         updateAttempt();
     }
     private static String normalize(String s) {
         return Normalizer.normalize(s,Normalizer.Form.NFD).replaceAll("\\p{M}","").toLowerCase(Locale.ROOT).trim();
     }
+    private void cancelSearch() {
+        searchVersion++;
+        if(searchDebounce!=null) main.removeCallbacks(searchDebounce);
+        if(searchTask!=null) searchTask.cancel(true);
+    }
     private void showMatches(String query) {
-        choices.removeAllViews(); if(finished || query.isBlank()) return;
-        String key=normalize(query); int shown=0;
-        for(Track t:tracks) if(normalize(t.label()).contains(key)) {
-            boolean checked=selected!=null && selected.id==t.id;
-            LinearLayout row=new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL); row.setPadding(dp(16),dp(4),dp(16),dp(4));
-            GradientDrawable background=surface(checked?Color.rgb(55,51,45):Color.rgb(26,27,28),18);
-            if(checked) background.setStroke(dp(1),Color.rgb(220,205,180));
-            LinearLayout holder=new LinearLayout(this); holder.setOrientation(LinearLayout.VERTICAL);
-            holder.setPadding(dp(4),0,dp(4),dp(4)); holder.setBackground(background);
-            row.setBackground(new RippleDrawable(ColorStateList.valueOf(0x22ffffff),null,null));
-            holder.addView(row,new LinearLayout.LayoutParams(-1,-2));
-            LinearLayout labels=new LinearLayout(this); labels.setOrientation(LinearLayout.VERTICAL);
-            row.addView(labels,new LinearLayout.LayoutParams(0,-2,1));
-            TextView title=text(labels,t.title,16,Color.WHITE); title.setPadding(0,dp(10),0,dp(3));
-            TextView artist=text(labels,t.artist,13,MUTED); artist.setPadding(0,0,0,dp(10));
-            TextView indicator=text(row,checked?"✓":"○",20,checked?Color.rgb(240,235,225):MUTED); indicator.setPadding(dp(12),0,0,0);
-            row.setFocusable(true); row.setClickable(true); row.setContentDescription(t.label()+(checked?", selected":"")); row.setSelected(checked);
-            row.setOnClickListener(v -> { selected=t; showMatches(query); });
-            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2); lp.topMargin=dp(8); choices.addView(holder,lp);
-            if(checked) { Button confirm=button(holder,"Submit guess"); primary(confirm); confirm.setOnClickListener(v -> guess(t)); }
-            if(++shown==8) break;
-        }
-        if(shown==0) text(choices,"No matching songs",14,MUTED);
+        cancelSearch(); final int version=searchVersion;
+        songChoices.show(List.of()); choices.setVisibility(View.GONE);
+        if(finished || query.isBlank()) { matchCount.setText("Search your library"); return; }
+        matchCount.setText("Searching…");
+        List<Track> library=new ArrayList<>(tracks);
+        searchDebounce=() -> searchTask=searchWorker.submit(() -> {
+            String key=normalize(query); ArrayList<Track> matches=new ArrayList<>();
+            for(Track song:library) {
+                if(Thread.currentThread().isInterrupted()) return;
+                if(normalize(song.label()).contains(key)) matches.add(song);
+            }
+            main.post(() -> {
+                if(isDestroyed() || searchVersion!=version || !screen.equals("round") || finished) return;
+                songChoices.show(matches); choices.setVisibility(matches.isEmpty()?View.GONE:View.VISIBLE);
+                matchCount.setText(matches.isEmpty()?"No matching songs":matches.size()+" songs · Scroll to browse");
+                choices.scrollToPosition(0);
+            });
+        });
+        main.postDelayed(searchDebounce,150);
     }
     private void guess(Track choice) {
         if(finished) return;
@@ -262,7 +294,7 @@ public final class MainActivity extends Activity {
         reveal();
     }
     private void reveal() {
-        screen="round"; screenVersion++;
+        cancelSearch(); screen="round"; screenVersion++; toolbar.getMenu().findItem(4).setVisible(target!=null);
         content.animate().cancel();
         content.removeAllViews();
         content.post(() -> ((ScrollView)root.getParent()).smoothScrollTo(0,0));
@@ -287,7 +319,6 @@ public final class MainActivity extends Activity {
         play=playbackButton(content,"▶   Replay "+duration(CLIPS[CLIPS.length-1])+" s"); play.setOnClickListener(v -> playClip());
         message=centered(content,score(wins,rounds)+" this session",13,MUTED);
         button(content,"Session statistics").setOnClickListener(v -> showStats(sessionId));
-        button(content,"No sound? Replace song").setOnClickListener(v -> reportSong());
         content.setAlpha(0f); content.setTranslationY(dp(12));
         content.animate().alpha(1f).translationY(0).setDuration(240).start();
         loadArtwork(artwork,target);
@@ -336,7 +367,7 @@ public final class MainActivity extends Activity {
         current.play(target.uri(),finished?CLIPS[CLIPS.length-1]:CLIPS[attempt],attributes,
             () -> { if(player==current) { play.setText("Playing…"); main.post(playbackTick); } },
             () -> { if(player==current) stopAudio(); },
-            () -> { if(player==current) { stopAudio(); message.setText("Cannot play this song. Tap No sound? Replace song to exclude it."); } });
+            () -> { if(player==current) { stopAudio(); message.setText("Cannot play this song. Use Replace unplayable song in the three-dot menu."); } });
     }
     private void stopAudio() {
         main.removeCallbacks(playbackTick);
@@ -355,7 +386,7 @@ public final class MainActivity extends Activity {
         return found+" / "+played+" solved · "+(played==0?"—":Math.round(100f*found/played)+"%");
     }
     private void beginPage(String page) {
-        stopAudio(); play=null; screen=page; screenVersion++;
+        stopAudio(); cancelSearch(); toolbar.getMenu().findItem(4).setVisible(false); play=null; screen=page; screenVersion++;
         content.animate().cancel(); content.setAlpha(1); content.setTranslationY(0); content.removeAllViews();
         content.post(() -> ((ScrollView)root.getParent()).smoothScrollTo(0,0));
         getSystemService(InputMethodManager.class).hideSoftInputFromWindow(content.getWindowToken(),0);
@@ -415,6 +446,26 @@ public final class MainActivity extends Activity {
             if(target!=null && excluded.contains(target.id)) { target=null; finished=false; solved=false; }
             GameHistory.Summary summary=history.summary(sessionId); rounds=summary.played(); wins=summary.found();
         } catch(Exception e) { sessionId=null; target=null; bag.clear(); excluded.clear(); toast("Could not resume the game. Saved statistics are still available."); }
+    }
+    private void confirmReplacement() {
+        if(target==null || !screen.equals("round")) return;
+        new MaterialAlertDialogBuilder(this).setTitle("Replace this song?")
+            .setMessage("Use this if the file is silent or cannot be played. This round is removed from all statistics and another song takes its place.")
+            .setNegativeButton("Keep song",null).setPositiveButton("Replace song",(dialog,which) -> reportSong()).show();
+    }
+    private void confirmReset() {
+        new MaterialAlertDialogBuilder(this).setTitle("Reset all statistics?")
+            .setMessage("Permanently delete all session history and statistics, and end the current game. Your music files are kept. This cannot be undone.")
+            .setNegativeButton("Cancel",null).setPositiveButton("Reset statistics",(dialog,which) -> resetStats()).show();
+    }
+    private void resetStats() {
+        stopAudio();
+        try { history.reset(); }
+        catch(Exception e) { toast("Could not reset statistics. Nothing was changed."); return; }
+        sessionId=null; roundId=null; target=null; sessionSize=0; rounds=0; wins=0; attempt=0;
+        finished=false; solved=false; exhausted=false; bag.clear(); excluded.clear();
+        getPreferences(0).edit().remove("game").apply();
+        showHome(); toast("Statistics reset.");
     }
     private void reportSong() {
         if(target==null || sessionId==null) return;
@@ -477,12 +528,13 @@ public final class MainActivity extends Activity {
         }
     }
     private void metric(LinearLayout row,String value,String label) {
-        LinearLayout column=card(row); column.setLayoutParams(new LinearLayout.LayoutParams(0,-2,1));
+        LinearLayout column=card(row); ((View)column.getParent()).setLayoutParams(new LinearLayout.LayoutParams(0,-2,1));
         centered(column,value,25,Color.WHITE); centered(column,label,12,MUTED);
     }
     private LinearLayout card(LinearLayout parent) {
-        LinearLayout card=new LinearLayout(this); card.setOrientation(LinearLayout.VERTICAL); card.setPadding(dp(14),dp(6),dp(14),dp(6)); card.setBackground(surface(Color.rgb(26,27,28),20));
-        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2); lp.setMargins(dp(3),dp(6),dp(3),dp(6)); parent.addView(card,lp); return card;
+        MaterialCardView container=new MaterialCardView(this); container.setRadius(dp(20)); container.setCardElevation(0);
+        LinearLayout column=new LinearLayout(this); column.setOrientation(LinearLayout.VERTICAL); column.setPadding(dp(14),dp(6),dp(14),dp(6)); container.addView(column);
+        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2); lp.setMargins(dp(3),dp(6),dp(3),dp(6)); parent.addView(container,lp); return column;
     }
     private void groupSection(String title,List<GameHistory.Group> groups) {
         text(content,title,18,Color.WHITE);
@@ -496,8 +548,8 @@ public final class MainActivity extends Activity {
         for(GameHistory.Group group:groups) {
             LinearLayout card=card(content);
             text(card,group.name()+"  ·  "+score(group.found(),group.played()),14,Color.WHITE);
-            ProgressBar bar=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal); bar.setMax(group.played()); bar.setProgress(group.found());
-            bar.setProgressTintList(ColorStateList.valueOf(Color.rgb(165,218,179))); bar.setProgressBackgroundTintList(ColorStateList.valueOf(Color.rgb(60,60,60)));
+            LinearProgressIndicator bar=new LinearProgressIndicator(this); bar.setMax(group.played()); bar.setProgress(group.found());
+            bar.setIndicatorColor(Color.rgb(165,218,179)); bar.setTrackColor(Color.rgb(60,60,60)); bar.setTrackThickness(dp(4)); bar.setTrackCornerRadius(dp(2));
             card.addView(bar,new LinearLayout.LayoutParams(-1,dp(5)));
             text(card,group.found()==0?"No correct answers yet":String.format(Locale.ROOT,"%.1f s average to solve",group.meanMs()/1000),12,MUTED);
         }
@@ -505,11 +557,10 @@ public final class MainActivity extends Activity {
     private PlaybackButton playbackButton(LinearLayout parent,String label) {
         PlaybackButton b=new PlaybackButton(this); b.setText(label); b.setAllCaps(false); b.setTextColor(Color.rgb(224,222,218)); b.setTextSize(16); b.setGravity(Gravity.CENTER);
         b.setPadding(dp(16),dp(14),dp(16),dp(14)); b.setMinHeight(dp(56));
-        b.setBackground(new RippleDrawable(ColorStateList.valueOf(0x22ffffff),surface(Color.rgb(34,34,34),28),null));
         LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2); lp.setMargins(0,dp(10),0,dp(4)); parent.addView(b,lp); return b;
     }
 
-    private void checkUpdate(Button button) {
+    private void checkUpdate() {
         if(downloadId!=-1) {
             DownloadManager dm=getSystemService(DownloadManager.class);
             try(Cursor c=dm.query(new DownloadManager.Query().setFilterById(downloadId))) {
@@ -521,7 +572,7 @@ public final class MainActivity extends Activity {
             }
             downloadId=-1; getPreferences(0).edit().remove("download").apply();
         }
-        button.setEnabled(false);
+        toolbar.getMenu().findItem(6).setEnabled(false);
         io.execute(() -> {
             String outcome; JSONObject release=null;
             HttpURLConnection connection=null;
@@ -544,7 +595,7 @@ public final class MainActivity extends Activity {
             JSONObject result=release; String info=outcome;
             main.post(() -> {
                 if(isDestroyed()) return;
-                button.setEnabled(true); button.setText("•••");
+                toolbar.getMenu().findItem(6).setEnabled(true);
                 try {
                     if(result!=null && newer(result.getString("tag_name"),BuildConfig.VERSION_NAME)) {
                         JSONArray assets=result.getJSONArray("assets");
@@ -553,14 +604,14 @@ public final class MainActivity extends Activity {
                             if(asset.getString("name").equals("PocketBlindtest.apk")) {
                                 String url=asset.getString("browser_download_url");
                                 if(!url.startsWith("https://github.com/vincedelmas/PocketBlindtest/releases/download/")) throw new IllegalArgumentException();
-                                new AlertDialog.Builder(this).setTitle("Update available: "+result.getString("tag_name"))
+                                new MaterialAlertDialogBuilder(this).setTitle("Update available: "+result.getString("tag_name"))
                                     .setMessage("Download the signed APK from GitHub? Android will ask before installing.")
                                     .setNegativeButton("Later",null).setPositiveButton("Download",(d,w)->download(url)).show(); return;
                             }
                         }
                         toast("The release APK is not ready yet. Try again shortly."); return;
                     }
-                    new AlertDialog.Builder(this).setTitle("App updates").setMessage(info).setPositiveButton("OK",null).show();
+                    new MaterialAlertDialogBuilder(this).setTitle("App updates").setMessage(info).setPositiveButton("OK",null).show();
                 } catch(Exception e) { toast("Could not read release information."); }
             });
         });
@@ -582,7 +633,7 @@ public final class MainActivity extends Activity {
     }
     private void installDownload(DownloadManager dm) {
         if(!getPackageManager().canRequestPackageInstalls()) {
-            new AlertDialog.Builder(this).setTitle("Allow app updates").setMessage("Enable installation from Pocket Blindtest, then return and tap Check for updates again.")
+            new MaterialAlertDialogBuilder(this).setTitle("Allow app updates").setMessage("Enable installation from Pocket Blindtest, then return and tap Check for updates again.")
                 .setNegativeButton("Cancel",null).setPositiveButton("Open settings",(d,w)->startActivity(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,Uri.parse("package:"+getPackageName())))).show(); return;
         }
         try {
@@ -600,16 +651,16 @@ public final class MainActivity extends Activity {
         GradientDrawable bg=new GradientDrawable(); bg.setColor(color); bg.setCornerRadius(dp(radius)); return bg;
     }
     private void primary(Button b) {
-        b.setBackground(new RippleDrawable(ColorStateList.valueOf(0x22000000),surface(Color.rgb(240,235,225),28),null));
-        b.setTextColor(BG); b.setTextSize(18); b.setMinHeight(dp(64));
+        MaterialButton material=(MaterialButton)b;
+        material.setBackgroundTintList(ColorStateList.valueOf(Color.rgb(232,216,189)));
+        material.setTextColor(Color.rgb(37,30,20)); material.setTextSize(17); material.setMinHeight(dp(60));
     }
     private Button button(LinearLayout parent,String label) {
-        Button b=new Button(this); b.setText(label); b.setAllCaps(false); b.setTextColor(Color.rgb(224,222,218)); b.setTextSize(15); b.setGravity(Gravity.CENTER);
-        b.setBackground(new RippleDrawable(ColorStateList.valueOf(0x22ffffff),surface(Color.rgb(34,34,34),18),null));
-        b.setPadding(dp(16),dp(14),dp(16),dp(14)); b.setMinHeight(dp(52));
-        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2); lp.topMargin=dp(10); lp.bottomMargin=dp(4); parent.addView(b,lp); return b;
+        MaterialButton b=new MaterialButton(this); b.setText(label); b.setAllCaps(false); b.setTextSize(15);
+        b.setPadding(dp(16),dp(12),dp(16),dp(12));
+        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2); lp.topMargin=dp(8); lp.bottomMargin=dp(2); parent.addView(b,lp); return b;
     }
     @Override protected void onSaveInstanceState(Bundle out) { super.onSaveInstanceState(out); out.putString("screen",screen); out.putString("statsSession",statsSession); saveGame(); }
     @Override protected void onStop() { stopAudio(); saveGame(); super.onStop(); }
-    @Override protected void onDestroy() { unregisterReceiver(noisy); io.execute(history::close); io.shutdown(); super.onDestroy(); }
+    @Override protected void onDestroy() { unregisterReceiver(noisy); cancelSearch(); searchWorker.shutdownNow(); io.execute(history::close); io.shutdown(); super.onDestroy(); }
 }

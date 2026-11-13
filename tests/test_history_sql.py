@@ -77,5 +77,19 @@ class HistorySqlTest(unittest.TestCase):
         self.assertEqual(len(self.db.execute(statement, ('two',)).fetchall()), 50)
 
 
+    def test_reset_deletes_all_results_and_sessions_and_allows_new_games(self):
+        reset_body = SOURCE.split('void reset() {', 1)[1].split('void remove(', 1)[0]
+        statements = re.findall(r'db.execSQL\("([^"\n]+)"\)', reset_body)
+        self.assertEqual(len(statements), 2)
+        self.db.commit()
+        with self.db:
+            for statement in statements:
+                self.db.execute(statement)
+        self.assertEqual(self.totals(), (0, 0, None))
+        self.assertEqual(self.db.execute('SELECT COUNT(*) FROM sessions').fetchone()[0], 0)
+        self.db.execute('INSERT INTO sessions VALUES (?, ?, ?)', ('new', 5, 3))
+        self.add('new-round', 'new', 'Jazz', 2004, 1, 2000)
+        self.assertEqual(self.totals('new'), (1, 1, 2000.0))
+
 if __name__ == '__main__':
     unittest.main()
