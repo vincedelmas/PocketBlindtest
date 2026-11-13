@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2](https://github.com/vincedelmas/PocketBlindtest/compare/v0.2.1...v0.2.2) (2026-11-13)
+
+
+### Bug Fixes
+
+* avoid obsolete Android SDK tools package ([97a073f](https://github.com/vincedelmas/PocketBlindtest/commit/97a073f25790e3f9ee2fca206471dd04258fc471))
+
 ## [0.2.1](https://github.com/vincedelmas/PocketBlindtest/compare/v0.2.0...v0.2.1) (2026-11-13)
 
 
