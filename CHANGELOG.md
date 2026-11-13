@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/vincedelmas/PocketBlindtest/compare/v0.6.0...v0.7.0) (2026-11-13)
+
+
+### Features
+
+* polish session cards and music player presentation ([6798b7b](https://github.com/vincedelmas/PocketBlindtest/commit/6798b7bb9cffffe1e6a8ac98ebc1978f864f7a6b))
+
 ## [0.6.0](https://github.com/vincedelmas/PocketBlindtest/compare/v0.5.0...v0.6.0) (2026-11-13)
 
 
