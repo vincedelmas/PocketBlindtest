@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/vincedelmas/PocketBlindtest/compare/v0.2.2...v0.3.0) (2026-11-13)
+
+
+### Features
+
+* refine game design and use sample-based audio clips ([a0bec24](https://github.com/vincedelmas/PocketBlindtest/commit/a0bec240cb70821fd28552c8f216829dce8e548b))
+
 ## [0.2.2](https://github.com/vincedelmas/PocketBlindtest/compare/v0.2.1...v0.2.2) (2026-11-13)
 
 
