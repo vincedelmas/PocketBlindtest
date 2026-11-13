@@ -204,7 +204,7 @@ public final class MainActivity extends AppCompatActivity {
         addArtwork(content,artwork,212);
         status=centered(content,"",25,Color.WHITE);
         status.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));
-        TextView detail=centered(content,"Find the title in your library",14,MUTED); detail.setPadding(0,0,0,dp(20));
+        TextView detail=centered(content,"Identify the track",14,MUTED); detail.setPadding(0,0,0,dp(20));
         stages=new LinearLayout(this); content.addView(stages);
         for(int i=0;i<CLIPS.length;i++) {
             TextView stage=text(stages,duration(CLIPS[i])+"s",12,MUTED); stage.setPadding(0,0,0,0); stage.setGravity(Gravity.CENTER); stage.setTypeface(Typeface.MONOSPACE);
@@ -230,7 +230,7 @@ public final class MainActivity extends AppCompatActivity {
             public void onTextChanged(CharSequence value,int start,int before,int count) { showMatches(value.toString()); }
             public void afterTextChanged(Editable value) {}
         });
-        skip=button(content,"Skip attempt"); skip.setOnClickListener(v -> miss("Skipped."));
+        skip=button(content,"Skip attempt   →"); quiet(skip); skip.setOnClickListener(v -> miss("Skipped."));
         updateAttempt();
     }
     private static String normalize(String s) {
@@ -275,12 +275,12 @@ public final class MainActivity extends AppCompatActivity {
         else { attempt++; search.setText(""); message.setText(feedback+"  "+(attempt+1)+" / "+CLIPS.length); updateAttempt(); saveGame(); }
     }
     private void updateAttempt() {
-        status.setText("Guess the song"); play.setText("▶   Play "+clipLabel());
+        status.setText(duration(CLIPS[attempt])+" second"+(CLIPS[attempt]==1000?"":"s")); play.setText("▶   Play "+clipLabel());
         if(attempt==0) message.setText("Attempt 1 of "+CLIPS.length);
         for(int i=0;i<stages.getChildCount();i++) {
             TextView stage=(TextView)stages.getChildAt(i);
-            stage.setTextColor(i==attempt?Color.WHITE:MUTED);
-            stage.setBackground(surface(i==attempt?ACCENT:Color.rgb(40,40,40),12));
+            stage.setTextColor(i==attempt?Color.rgb(37,30,20):i<attempt?Color.rgb(165,218,179):MUTED);
+            stage.setBackground(surface(i==attempt?Color.rgb(232,216,189):Color.rgb(31,33,32),14));
         }
     }
     private static String duration(int ms) { return java.math.BigDecimal.valueOf(ms,3).stripTrailingZeros().toPlainString(); }
@@ -300,6 +300,8 @@ public final class MainActivity extends AppCompatActivity {
         content.post(() -> ((ScrollView)root.getParent()).smoothScrollTo(0,0));
         TextView result=eyebrow(content,solved?"✓  IDENTIFIED":"THE TRACK");
         result.setTextColor(solved?Color.rgb(165,218,179):Color.rgb(237,225,206));
+        result.setBackground(surface(solved?Color.rgb(31,48,37):Color.rgb(49,42,34),50)); result.setPadding(dp(18),dp(9),dp(18),dp(9));
+        LinearLayout.LayoutParams badgeParams=new LinearLayout.LayoutParams(-2,-2); badgeParams.gravity=Gravity.CENTER_HORIZONTAL; badgeParams.setMargins(0,dp(18),0,dp(22)); result.setLayoutParams(badgeParams);
         RecordArtwork artwork=new RecordArtwork(this,true);
         addArtwork(content,artwork,256);
         TextView title=centered(content,target.title,28,Color.WHITE);
@@ -318,7 +320,7 @@ public final class MainActivity extends AppCompatActivity {
         Button next=button(content,sessionSize>0 && rounds>=sessionSize?"See session summary   →":"Next song   →"); primary(next); next.setOnClickListener(v -> nextRound());
         play=playbackButton(content,"▶   Replay "+duration(CLIPS[CLIPS.length-1])+" s"); play.setOnClickListener(v -> playClip());
         message=centered(content,score(wins,rounds)+" this session",13,MUTED);
-        button(content,"Session statistics").setOnClickListener(v -> showStats(sessionId));
+        Button statistics=button(content,"Session statistics   →"); quiet(statistics); statistics.setOnClickListener(v -> showStats(sessionId));
         content.setAlpha(0f); content.setTranslationY(dp(12));
         content.animate().alpha(1f).translationY(0).setDuration(240).start();
         loadArtwork(artwork,target);
@@ -392,25 +394,33 @@ public final class MainActivity extends AppCompatActivity {
         getSystemService(InputMethodManager.class).hideSoftInputFromWindow(content.getWindowToken(),0);
     }
     private void showHome() {
-        beginPage("home"); eyebrow(content,"GAME MODES");
-        centered(content,"Choose a session",26,Color.WHITE);
+        beginPage("home");
+        TextView homeTitle=text(content,"Play your\nmusic library.",36,Color.rgb(240,235,225));
+        homeTitle.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL)); homeTitle.setLineSpacing(dp(2),1); homeTitle.setPadding(dp(4),dp(24),0,dp(20));
         if(sessionId!=null) {
             Button resume=button(content,sessionEnded()?"View session summary":"Continue "+(sessionSize==0?"infinite mode":sessionSize+"-song session"));
             primary(resume); resume.setOnClickListener(v -> { if(sessionEnded()) showStats(sessionId); else if(target!=null) renderRound(); else nextRound(); });
             centered(content,score(wins,rounds),13,MUTED);
         }
-        text(content,"New game",14,MUTED);
+        TextView section=text(content,"New session",20,Color.rgb(240,235,225)); section.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));
         LinearLayout row=null;
         for(int i=0;i<4;i++) {
             if(i%2==0) { row=new LinearLayout(this); content.addView(row); }
             int count=new int[]{5,10,15,20}[i];
-            Button mode=button(row,count+" songs"); LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(72),1); lp.setMargins(dp(4),dp(4),dp(4),dp(4)); mode.setLayoutParams(lp);
-            mode.setEnabled(tracks.size()>=count); mode.setAlpha(mode.isEnabled()?1:.35f);
-            mode.setOnClickListener(v -> startSession(count));
+            MaterialCardView mode=new MaterialCardView(this); mode.setRadius(dp(24)); mode.setCardElevation(0);
+            mode.setCardBackgroundColor(Color.rgb(30,32,31)); mode.setStrokeColor(Color.rgb(60,63,59)); mode.setStrokeWidth(dp(1));
+            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-2,1); lp.setMargins(dp(4),dp(4),dp(4),dp(4)); row.addView(mode,lp);
+            LinearLayout labels=new LinearLayout(this); labels.setOrientation(LinearLayout.VERTICAL); labels.setPadding(dp(20),dp(10),dp(20),dp(16)); mode.addView(labels);
+            TextView number=text(labels,String.format(Locale.ROOT,"%02d",count),36,Color.rgb(232,216,189));
+            number.setTypeface(Typeface.create("sans-serif-light",Typeface.NORMAL)); number.setPadding(0,dp(6),0,0);
+            TextView caption=text(labels,"SONGS   ↗",11,Color.rgb(200,202,193)); caption.setLetterSpacing(.12f); caption.setPadding(0,dp(4),0,0);
+            boolean available=tracks.size()>=count; mode.setEnabled(available); mode.setAlpha(available?1:.4f);
+            mode.setClickable(available); mode.setFocusable(available); mode.setContentDescription(count+"-song session"+(available?"":". Requires "+count+" songs in your library"));
+            if(available) mode.setOnClickListener(v -> startSession(count));
         }
-        Button infinite=button(content,"∞   Infinite mode"); infinite.setEnabled(!tracks.isEmpty()); infinite.setOnClickListener(v -> startSession(0));
-        centered(content,tracks.size()+" songs available · Fixed sessions do not repeat songs",12,MUTED);
-        button(content,"History & statistics").setOnClickListener(v -> showStats(null));
+        Button infinite=button(content,"∞   Infinite mode"); infinite.setMinHeight(dp(64)); infinite.setEnabled(!tracks.isEmpty()); infinite.setOnClickListener(v -> startSession(0));
+        centered(content,tracks.size()+" songs in your library",12,MUTED);
+        Button stats=button(content,"History & statistics   →"); quiet(stats); stats.setOnClickListener(v -> showStats(null));
     }
     private boolean sessionEnded() { return exhausted || (sessionSize>0 && rounds>=sessionSize); }
     private void startSession(int size) {
@@ -649,6 +659,10 @@ public final class MainActivity extends AppCompatActivity {
     }
     private GradientDrawable surface(int color,int radius) {
         GradientDrawable bg=new GradientDrawable(); bg.setColor(color); bg.setCornerRadius(dp(radius)); return bg;
+    }
+    private void quiet(Button b) {
+        MaterialButton material=(MaterialButton)b; material.setBackgroundTintList(ColorStateList.valueOf(Color.TRANSPARENT));
+        material.setTextColor(Color.rgb(200,197,190)); material.setStrokeWidth(0);
     }
     private void primary(Button b) {
         MaterialButton material=(MaterialButton)b;

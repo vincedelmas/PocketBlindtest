@@ -15,7 +15,10 @@ final class RecordArtwork extends View {
         setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
     }
 
-    void setArtwork(Bitmap bitmap) { artwork=bitmap; invalidate(); }
+    void setArtwork(Bitmap bitmap) {
+        artwork=bitmap; invalidate();
+        if(bitmap!=null) { setAlpha(.65f); animate().alpha(1f).setDuration(220).start(); }
+    }
 
     @Override protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);

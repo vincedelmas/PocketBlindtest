@@ -7,7 +7,10 @@
         <item name="colorSecondaryContainer">#30352E</item>
         <item name="colorOnSecondaryContainer">#E0E9DB</item>
         <item name="colorOutline">#77756F</item>
-        <item name="colorSurface">#18191B</item>
+        <item name="colorSurface">#181B19</item>
+        <item name="colorSurfaceContainer">#202421</item>
+        <item name="colorSurfaceContainerHigh">#292E2A</item>
+        <item name="colorSurfaceContainerHighest">#343A35</item>
         <item name="colorOnSurface">#F0EBE1</item>
         <item name="colorOnSurfaceVariant">#C8C5BE</item>
         <item name="android:fontFamily">sans</item>
