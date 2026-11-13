@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/vincedelmas/PocketBlindtest/compare/v0.4.0...v0.5.0) (2026-11-13)
+
+
+### Features
+
+* add session modes, persistent stats and unplayable song reports ([02b5ce9](https://github.com/vincedelmas/PocketBlindtest/commit/02b5ce94d70d78af7adf0621cc5bb62466417045))
+
 ## [0.4.0](https://github.com/vincedelmas/PocketBlindtest/compare/v0.3.0...v0.4.0) (2026-11-13)
 
 
