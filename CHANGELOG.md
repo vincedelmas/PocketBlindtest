@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/vincedelmas/PocketBlindtest/compare/v0.9.0...v0.10.0) (2026-11-21)
+
+
+### Features
+
+* modernize UI with sleek dark studio design and smoother controls ([bc8c937](https://github.com/vincedelmas/PocketBlindtest/commit/bc8c937856ede866e753d62a9704ff6fd31cc629))
+
 ## [0.9.0](https://github.com/vincedelmas/PocketBlindtest/compare/v0.8.0...v0.9.0) (2026-11-13)
 
 
